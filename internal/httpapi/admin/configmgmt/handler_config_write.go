@@ -52,6 +52,12 @@ func (h *Handler) updateConfig(w http.ResponseWriter, r *http.Request) {
 					if strings.TrimSpace(acc.Password) == "" {
 						acc.Password = prev.Password
 					}
+					// SDAI：浏览器端表单不携带 token（编辑仅 name/remark 等元信息），
+					// 整份配置保存时必须回填已存 token，否则凭据会被静默清空
+					// （数据丢失级回归：config.json 中 token 消失导致全部请求鉴权失败）。
+					if strings.TrimSpace(acc.Token) == "" {
+						acc.Token = prev.Token
+					}
 				}
 				seen[key] = struct{}{}
 				accounts = append(accounts, acc)
