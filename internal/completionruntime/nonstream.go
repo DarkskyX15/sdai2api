@@ -210,6 +210,8 @@ func startStandardCompletionOnAlternateAccount(ctx context.Context, ds DeepSeekC
 		return StartResult{}, authOutputError(a)
 	}
 	payload := stdReq.CompletionPayload(sessionID)
+	// 切号重试同样源于空输出，统一 think=0 规避 reasoning-only（与同账号重试一致）。
+	payload["think"] = 0
 	resp, err := ds.CallCompletion(ctx, a, payload, maxAttempts)
 	if err != nil {
 		return StartResult{SessionID: sessionID, Payload: payload}, completionCallError(err, a)

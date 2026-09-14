@@ -283,8 +283,9 @@ test('vercel stream retries empty output once with content suffix', async () => 
   assert.equal(frames.filter((frame) => frame === '[DONE]').length, 1);
   assert.equal(parsed[0].choices[0].delta.content, 'visible');
   assert.equal(parsed[1].choices[0].finish_reason, 'stop');
-  // SDAI fresh retry：content 后缀，无 parent_message_id。
+  // SDAI fresh retry：content 后缀 + think=0（规避 reasoning-only），无 parent_message_id。
   assert.match(fetchBodies[1].content, /Previous reply had no visible output\. Please regenerate the visible final answer or tool call now\.$/);
+  assert.equal(fetchBodies[1].think, 0);
   assert.equal(Object.hasOwn(fetchBodies[1], 'parent_message_id'), false);
 });
 

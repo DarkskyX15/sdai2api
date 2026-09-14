@@ -440,6 +440,9 @@ function clonePayloadForEmptyOutputRetry(payload) {
   return {
     ...(payload || {}),
     content: appendEmptyOutputRetrySuffix(asString(payload && payload.content)),
+    // SDAI 思考模型会把整段回答写进 reasoning 通道（正文为空），
+    // 重试时强制 think=0 打破 reasoning-only 循环（与 Go 侧语义一致）。
+    think: 0,
   };
 }
 

@@ -150,6 +150,8 @@ func startPayloadCompletionOnAlternateAccount(ctx context.Context, ds DeepSeekCa
 		nextPayload["uuid"] = sessionID
 	}
 	delete(nextPayload, "parent_message_id")
+	// 切号重试同样源于空输出，统一 think=0 规避 reasoning-only（与同账号重试一致）。
+	nextPayload["think"] = 0
 	resp, err := ds.CallCompletion(ctx, a, nextPayload, maxAttempts)
 	if err != nil {
 		return StartResult{SessionID: sessionID, Payload: nextPayload}, completionCallError(err, a)
