@@ -19,7 +19,7 @@ func TestOpenAIStreamTranslatorWriterClaude(t *testing.T) {
 	_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl_1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"claude-sonnet-4-5\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\n"))
 	_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl_1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"claude-sonnet-4-5\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n"))
 	_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl_1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"claude-sonnet-4-5\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":29,\"total_tokens\":40}}\n\n"))
-	_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	_, _ = w.Write([]byte("data: DONE\n\n"))
 
 	body := rec.Body.String()
 	if !strings.Contains(body, "event: message_start") {
@@ -40,7 +40,7 @@ func TestOpenAIStreamTranslatorWriterGemini(t *testing.T) {
 	w.WriteHeader(200)
 	_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl_1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gemini-2.5-pro\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n"))
 	_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl_1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gemini-2.5-pro\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":29,\"total_tokens\":40}}\n\n"))
-	_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	_, _ = w.Write([]byte("data: DONE\n\n"))
 
 	body := rec.Body.String()
 	if !strings.Contains(body, "candidates") {

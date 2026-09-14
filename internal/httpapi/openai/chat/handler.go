@@ -47,7 +47,7 @@ func (h *Handler) applyCurrentInputFile(ctx context.Context, a *auth.RequestAuth
 		return stdReq, nil
 	}
 	stdReq = shared.ApplyThinkingInjection(h.Store, stdReq)
-	svc := history.Service{Store: h.Store, DS: h.DS}
+	svc := history.Service{Store: h.Store}
 	out, err := svc.ApplyCurrentInputFile(ctx, a, stdReq)
 	if err != nil || out.CurrentInputFileApplied {
 		return out, err

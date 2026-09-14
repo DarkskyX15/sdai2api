@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 
 	openaifmt "ds2api/internal/format/openai"
-	"ds2api/internal/sse"
 	"ds2api/internal/toolstream"
 )
 
@@ -45,7 +44,7 @@ func (s *responsesStreamRuntime) processToolStreamEvents(events []toolstream.Eve
 	for _, evt := range events {
 		if emitContent && evt.Content != "" {
 			cleaned := cleanVisibleOutput(evt.Content, s.stripReferenceMarkers)
-			if cleaned != "" && (!s.searchEnabled || !sse.IsCitation(cleaned)) {
+			if cleaned != "" {
 				s.emitTextDelta(cleaned)
 			}
 		}

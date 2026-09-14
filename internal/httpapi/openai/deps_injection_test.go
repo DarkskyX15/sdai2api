@@ -47,7 +47,7 @@ func (m mockOpenAIConfig) ThinkingInjectionPrompt() string { return m.thinkingPr
 func TestNormalizeOpenAIChatRequestWithConfigInterface(t *testing.T) {
 	cfg := mockOpenAIConfig{
 		aliases: map[string]string{
-			"my-model": "deepseek-v4-flash-search",
+			"my-model": "deepseek-v4-flash",
 		},
 	}
 	req := map[string]any{
@@ -58,10 +58,10 @@ func TestNormalizeOpenAIChatRequestWithConfigInterface(t *testing.T) {
 	if err != nil {
 		t.Fatalf("promptcompat.NormalizeOpenAIChatRequest error: %v", err)
 	}
-	if out.ResolvedModel != "deepseek-v4-flash-search" {
+	if out.ResolvedModel != "deepseek-v4-flash" {
 		t.Fatalf("resolved model mismatch: got=%q", out.ResolvedModel)
 	}
-	if !out.Search || !out.Thinking {
+	if !out.Thinking || out.Search {
 		t.Fatalf("unexpected model flags: thinking=%v search=%v", out.Thinking, out.Search)
 	}
 }

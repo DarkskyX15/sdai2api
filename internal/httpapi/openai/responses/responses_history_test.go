@@ -24,20 +24,12 @@ func (d *responsesHistoryDS) CreateSession(context.Context, *auth.RequestAuth, i
 	return "session-id", nil
 }
 
-func (d *responsesHistoryDS) GetPow(context.Context, *auth.RequestAuth, int) (string, error) {
-	return "pow", nil
-}
-
-func (d *responsesHistoryDS) UploadFile(context.Context, *auth.RequestAuth, dsclient.UploadFileRequest, int) (*dsclient.UploadFileResult, error) {
-	return &dsclient.UploadFileResult{ID: "file-id"}, nil
-}
-
-func (d *responsesHistoryDS) CallCompletion(_ context.Context, _ *auth.RequestAuth, payload map[string]any, _ string, _ int) (*http.Response, error) {
+func (d *responsesHistoryDS) CallCompletion(_ context.Context, _ *auth.RequestAuth, payload map[string]any, _ int) (*http.Response, error) {
 	d.payload = payload
 	return &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     make(http.Header),
-		Body:       io.NopCloser(strings.NewReader("data: {\"p\":\"response/content\",\"v\":\"ok\"}\n")),
+		Body:       io.NopCloser(strings.NewReader("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\",\"type\":\"text\"}}]}\ndata: DONE\n")),
 	}, nil
 }
 
@@ -88,7 +80,8 @@ func TestResponsesRecordsResponseHistory(t *testing.T) {
 	if item.Surface != "openai.responses" {
 		t.Fatalf("unexpected surface: %q", item.Surface)
 	}
-	if !strings.Contains(item.UserInput, "Continue from the latest state in the attached DS2API_HISTORY.txt context.") {
+	// SDAI：current_input_file 短路，UserInput 为原始输入（可能带 thinking 注入后缀）。
+	if !strings.Contains(item.UserInput, "hello responses") {
 		t.Fatalf("unexpected user input: %q", item.UserInput)
 	}
 	if !strings.Contains(item.HistoryText, "hello responses") {

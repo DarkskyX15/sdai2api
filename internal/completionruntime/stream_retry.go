@@ -36,7 +36,7 @@ type StreamRetryHooks struct {
 	OnTerminal      func(attempts int)
 }
 
-func ExecuteStreamWithRetry(ctx context.Context, ds DeepSeekCaller, a *auth.RequestAuth, initialResp *http.Response, payload map[string]any, pow string, opts StreamRetryOptions, hooks StreamRetryHooks) {
+func ExecuteStreamWithRetry(ctx context.Context, ds DeepSeekCaller, a *auth.RequestAuth, initialResp *http.Response, payload map[string]any, opts StreamRetryOptions, hooks StreamRetryHooks) {
 	if hooks.ConsumeAttempt == nil {
 		return
 	}
@@ -86,7 +86,6 @@ func ExecuteStreamWithRetry(ctx context.Context, ds DeepSeekCaller, a *auth.Requ
 					config.Logger.Info("[completion_runtime_account_switch_retry] retrying after 429", "surface", surface, "stream", opts.Stream, "account", a.AccountID)
 					currentResp = switched.Response
 					currentPayload = switched.Payload
-					pow = switched.Pow
 					if hooks.OnAccountSwitch != nil {
 						hooks.OnAccountSwitch(switched.SessionID)
 					}
@@ -103,17 +102,9 @@ func ExecuteStreamWithRetry(ctx context.Context, ds DeepSeekCaller, a *auth.Requ
 		}
 
 		attempts++
-		parentMessageID := 0
-		if hooks.ParentMessageID != nil {
-			parentMessageID = hooks.ParentMessageID()
-		}
-		config.Logger.Info("[completion_runtime_empty_retry] attempting synthetic retry", "surface", surface, "stream", opts.Stream, "retry_attempt", attempts, "parent_message_id", parentMessageID)
-		retryPow, powErr := ds.GetPow(ctx, a, maxAttempts)
-		if powErr != nil {
-			config.Logger.Warn("[completion_runtime_empty_retry] retry PoW fetch failed, falling back to original PoW", "surface", surface, "stream", opts.Stream, "retry_attempt", attempts, "error", powErr)
-			retryPow = pow
-		}
-		nextResp, err := ds.CallCompletion(ctx, a, shared.ClonePayloadForEmptyOutputRetry(currentPayload, parentMessageID), retryPow, maxAttempts)
+		config.Logger.Info("[completion_runtime_empty_retry] attempting synthetic retry", "surface", surface, "stream", opts.Stream, "retry_attempt", attempts)
+		// SDAI 无 parent_message_id 语义：fresh retry 使用全新 uuid + 原始归一化上下文。
+		nextResp, err := ds.CallCompletion(ctx, a, shared.ClonePayloadForEmptyOutputRetry(currentPayload, 0), maxAttempts)
 		if err != nil {
 			if hooks.OnRetryFailure != nil {
 				hooks.OnRetryFailure(http.StatusInternalServerError, "Failed to get completion.", "error")
@@ -151,25 +142,19 @@ func startPayloadCompletionOnAlternateAccount(ctx context.Context, ds DeepSeekCa
 	if err != nil {
 		return StartResult{}, authOutputError(a)
 	}
-	pow, err := ds.GetPow(ctx, a, maxAttempts)
-	if err != nil {
-		return StartResult{SessionID: sessionID}, &assistantturn.OutputError{Status: http.StatusUnauthorized, Message: "Failed to get PoW (invalid token or unknown error).", Code: "error"}
-	}
 	nextPayload := clonePayload(payload)
 	if opts.CurrentInputFile != nil && opts.Request.CurrentInputFileApplied {
-		stdReq, prepErr := reuploadCurrentInputFileForAccount(ctx, ds, a, opts.Request, Options{CurrentInputFile: opts.CurrentInputFile})
-		if prepErr != nil {
-			return StartResult{SessionID: sessionID}, prepErr
-		}
-		nextPayload = stdReq.CompletionPayload(sessionID)
+		// SDAI 无上传通道：current_input_file 已短路，直接重建 payload。
+		nextPayload = opts.Request.CompletionPayload(sessionID)
+	} else {
+		nextPayload["uuid"] = sessionID
 	}
-	nextPayload["chat_session_id"] = sessionID
 	delete(nextPayload, "parent_message_id")
-	resp, err := ds.CallCompletion(ctx, a, nextPayload, pow, maxAttempts)
+	resp, err := ds.CallCompletion(ctx, a, nextPayload, maxAttempts)
 	if err != nil {
-		return StartResult{SessionID: sessionID, Payload: nextPayload, Pow: pow}, &assistantturn.OutputError{Status: http.StatusInternalServerError, Message: "Failed to get completion.", Code: "error"}
+		return StartResult{SessionID: sessionID, Payload: nextPayload}, completionCallError(err, a)
 	}
-	return StartResult{SessionID: sessionID, Payload: nextPayload, Pow: pow, Response: resp}, nil
+	return StartResult{SessionID: sessionID, Payload: nextPayload, Response: resp}, nil
 }
 
 func clonePayload(payload map[string]any) map[string]any {

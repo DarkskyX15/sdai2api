@@ -263,7 +263,7 @@ func (s *chatStreamRuntime) finalize(finishReason string, deferEmptyOutput bool)
 				continue
 			}
 			cleaned := cleanVisibleOutput(evt.Content, s.stripReferenceMarkers)
-			if cleaned == "" || (s.searchEnabled && sse.IsCitation(cleaned)) {
+			if cleaned == "" {
 				continue
 			}
 			batch.append("content", cleaned)
@@ -370,7 +370,7 @@ func (s *chatStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedD
 				}
 				if evt.Content != "" {
 					cleaned := cleanVisibleOutput(evt.Content, s.stripReferenceMarkers)
-					if cleaned == "" || (s.searchEnabled && sse.IsCitation(cleaned)) {
+					if cleaned == "" {
 						continue
 					}
 					batch.append("content", cleaned)

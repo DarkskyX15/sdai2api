@@ -88,8 +88,8 @@ func streamFinishReason(frames []map[string]any) string {
 func TestHandleNonStreamSingleAttemptReturns503WhenUpstreamOutputEmpty(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
-		`data: {"p":"response/content","v":""}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"","type":"text"}}]}`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 
@@ -104,11 +104,16 @@ func TestHandleNonStreamSingleAttemptReturns503WhenUpstreamOutputEmpty(t *testin
 	}
 }
 
-func TestHandleNonStreamSingleAttemptReturnsContentFilterErrorWhenUpstreamFilteredWithoutOutput(t *testing.T) {
+func TestHandleNonStreamSingleAttemptContentFilterRemoved(t *testing.T) {
+	// SDAI 上游没有 content_filter 信号。
+	t.Skip("content_filter is not an SDAI upstream signal")
+}
+
+func testHandleNonStreamSingleAttemptReturnsContentFilterErrorWhenUpstreamFilteredWithoutOutput(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
 		`data: {"code":"content_filter"}`,
-		`data: [DONE]`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 
@@ -126,8 +131,8 @@ func TestHandleNonStreamSingleAttemptReturnsContentFilterErrorWhenUpstreamFilter
 func TestHandleNonStreamSingleAttemptReturns429WhenUpstreamHasOnlyThinking(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
-		`data: {"p":"response/thinking_content","v":"Only thinking"}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"Only thinking","type":"think"}}]}`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 
@@ -145,8 +150,8 @@ func TestHandleNonStreamSingleAttemptReturns429WhenUpstreamHasOnlyThinking(t *te
 func TestHandleNonStreamPromotesThinkingToolCallsWhenTextEmpty(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
-		`data: {"p":"response/thinking_content","v":"<tool_calls><invoke name=\"search\"><parameter name=\"q\">from-thinking</parameter></invoke></tool_calls>"}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"<tool_calls><invoke name=\"search\"><parameter name=\"q\">from-thinking</parameter></invoke></tool_calls>","type":"think"}}]}`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 
@@ -176,8 +181,8 @@ func TestHandleNonStreamPromotesThinkingToolCallsWhenTextEmpty(t *testing.T) {
 func TestHandleNonStreamPromotesHiddenThinkingDSMLToolCallsWhenTextEmpty(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
-		`data: {"p":"response/thinking_content","v":"<|DSML|tool_calls><|DSML|invoke name=\"search\"><|DSML|parameter name=\"q\">from-hidden-thinking</|DSML|parameter></|DSML|invoke></|DSML|tool_calls>"}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"<|DSML|tool_calls><|DSML|invoke name=\"search\"><|DSML|parameter name=\"q\">from-hidden-thinking</|DSML|parameter></|DSML|invoke></|DSML|tool_calls>","type":"think"}}]}`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 
@@ -204,9 +209,9 @@ func TestHandleNonStreamPromotesHiddenThinkingDSMLToolCallsWhenTextEmpty(t *test
 func TestHandleStreamToolsPlainTextStreamsBeforeFinish(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
-		`data: {"p":"response/content","v":"你好，"}`,
-		`data: {"p":"response/content","v":"这是普通文本回复。"}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"你好，","type":"text"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"这是普通文本回复。","type":"text"}}]}`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
@@ -239,15 +244,15 @@ func TestHandleStreamToolsPlainTextStreamsBeforeFinish(t *testing.T) {
 	}
 }
 
-func TestHandleStreamThinkingDisabledDoesNotLeakHiddenFragmentContinuations(t *testing.T) {
+func TestHandleStreamThinkingDisabledDoesNotLeakHiddenThinkDeltas(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
-		`data: {"p":"response/fragments","o":"APPEND","v":[{"type":"THINK","content":"我们"}]}`,
-		`data: {"p":"response/fragments/-1/content","v":"被"}`,
-		`data: {"v":"要求"}`,
-		`data: {"p":"response/fragments","o":"APPEND","v":[{"type":"RESPONSE","content":"答"}]}`,
-		`data: {"p":"response/fragments/-1/content","v":"案"}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"我们","type":"think"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"被","type":"think"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"要求","type":"think"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"答","type":"text"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"案","type":"text"}}]}`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
@@ -277,8 +282,12 @@ func TestHandleStreamThinkingDisabledDoesNotLeakHiddenFragmentContinuations(t *t
 func TestHandleStreamEmitsSingleChoiceFramesForMultipleParsedParts(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
-		`data: {"p":"response/fragments","o":"APPEND","v":[{"type":"THINK","content":"我们"},{"type":"THINK","content":"被"},{"type":"THINK","content":"要求"},{"type":"RESPONSE","content":"答"},{"type":"RESPONSE","content":"案"}]}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"我们","type":"think"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"被","type":"think"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"要求","type":"think"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"答","type":"text"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"案","type":"text"}}]}`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
@@ -313,12 +322,14 @@ func TestHandleStreamCoalescesSmallContentDeltas(t *testing.T) {
 	lines := make([]string, 0, 101)
 	for i := 0; i < 100; i++ {
 		b, _ := json.Marshal(map[string]any{
-			"p": "response/content",
-			"v": "字",
+			"choices": []any{map[string]any{
+				"index": 0,
+				"delta": map[string]any{"content": "字", "type": "text"},
+			}},
 		})
 		lines = append(lines, "data: "+string(b))
 	}
-	lines = append(lines, "data: [DONE]")
+	lines = append(lines, "data: DONE")
 	resp := makeSSEHTTPResponse(lines...)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
@@ -354,8 +365,8 @@ func TestHandleStreamCoalescesSmallContentDeltas(t *testing.T) {
 func TestHandleStreamIncompleteCapturedToolJSONFlushesAsTextOnFinalize(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
-		`data: {"p":"response/content","v":"{\"tool_calls\":[{\"name\":\"search\""}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"{\"tool_calls\":[{\"name\":\"search\"","type":"text"}}]}`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
@@ -388,8 +399,8 @@ func TestHandleStreamIncompleteCapturedToolJSONFlushesAsTextOnFinalize(t *testin
 func TestHandleStreamPromotesThinkingToolCallsOnFinalizeWithoutMidstreamIntercept(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
-		`data: {"p":"response/thinking_content","v":"<tool_calls><invoke name=\"search\"><parameter name=\"q\">from-thinking</parameter></invoke></tool_calls>"}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"<tool_calls><invoke name=\"search\"><parameter name=\"q\">from-thinking</parameter></invoke></tool_calls>","type":"think"}}]}`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
@@ -421,8 +432,8 @@ func TestHandleStreamPromotesThinkingToolCallsOnFinalizeWithoutMidstreamIntercep
 func TestHandleStreamPromotesHiddenThinkingDSMLToolCallsOnFinalize(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
-		`data: {"p":"response/thinking_content","v":"<|DSML|tool_calls><|DSML|invoke name=\"search\"><|DSML|parameter name=\"q\">from-hidden-thinking</|DSML|parameter></|DSML|invoke></|DSML|tool_calls>"}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"<|DSML|tool_calls><|DSML|invoke name=\"search\"><|DSML|parameter name=\"q\">from-hidden-thinking</|DSML|parameter></|DSML|invoke></|DSML|tool_calls>","type":"think"}}]}`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
@@ -454,9 +465,9 @@ func TestHandleStreamPromotesHiddenThinkingDSMLToolCallsOnFinalize(t *testing.T)
 func TestHandleStreamEmitsDistinctToolCallIDsAcrossSeparateToolBlocks(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
-		`data: {"p":"response/content","v":"前置文本\n<tool_calls>\n  <invoke name=\"read_file\">\n    <parameter name=\"path\">README.MD</parameter>\n  </invoke>\n</tool_calls>"}`,
-		`data: {"p":"response/content","v":"中间文本\n<tool_calls>\n  <invoke name=\"search\">\n    <parameter name=\"q\">golang</parameter>\n  </invoke>\n</tool_calls>"}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"前置文本\n<tool_calls>\n  <invoke name=\"read_file\">\n    <parameter name=\"path\">README.MD</parameter>\n  </invoke>\n</tool_calls>","type":"text"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"中间文本\n<tool_calls>\n  <invoke name=\"search\">\n    <parameter name=\"q\">golang</parameter>\n  </invoke>\n</tool_calls>","type":"text"}}]}`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
@@ -502,12 +513,17 @@ func TestHandleStreamEmitsDistinctToolCallIDsAcrossSeparateToolBlocks(t *testing
 func TestHandleStreamCoercesSchemaDeclaredStringArgumentsOnFinalize(t *testing.T) {
 	h := &Handler{}
 	line := func(v string) string {
-		b, _ := json.Marshal(map[string]any{"p": "response/content", "v": v})
+		b, _ := json.Marshal(map[string]any{
+			"choices": []any{map[string]any{
+				"index": 0,
+				"delta": map[string]any{"content": v, "type": "text"},
+			}},
+		})
 		return "data: " + string(b)
 	}
 	resp := makeSSEHTTPResponse(
 		line(`<tool_calls><invoke name="Write">{"input":{"content":{"message":"hi"},"taskId":1}}</invoke></tool_calls>`),
-		`data: [DONE]`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
@@ -565,11 +581,11 @@ func TestHandleNonStreamWithRetryIncludesRefFileTokensInUsage(t *testing.T) {
 
 	run := func(refFileTokens int) map[string]any {
 		resp := makeSSEHTTPResponse(
-			`data: {"p":"response/content","v":"hello world"}`,
-			`data: [DONE]`,
+			`data: {"choices":[{"index":0,"delta":{"content":"hello world","type":"text"}}]}`,
+			`data: DONE`,
 		)
 		rec := httptest.NewRecorder()
-		h.handleNonStreamWithRetry(rec, context.Background(), nil, resp, nil, "", "cid-ref", "deepseek-v4-flash", "prompt", refFileTokens, false, false, nil, nil, nil)
+		h.handleNonStreamWithRetry(rec, context.Background(), nil, resp, nil, "cid-ref", "deepseek-v4-flash", "prompt", refFileTokens, false, false, nil, nil, nil)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 		}

@@ -2,7 +2,6 @@ package files
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"mime"
@@ -13,7 +12,6 @@ import (
 
 	"ds2api/internal/auth"
 	"ds2api/internal/config"
-	dsclient "ds2api/internal/deepseek/client"
 	"ds2api/internal/httpapi/openai/shared"
 	"ds2api/internal/promptcompat"
 )
@@ -149,54 +147,13 @@ func (s *inlineUploadState) tryUploadBlock(block map[string]any) (map[string]any
 	if !ok {
 		return nil, false, nil
 	}
-	if s.uploadCount >= maxInlineFilesPerRequest {
-		err := fmt.Errorf("exceeded maximum of %d inline files per request", maxInlineFilesPerRequest)
-		return nil, true, &inlineFileUploadError{status: http.StatusBadRequest, message: err.Error(), err: err}
+	// SDAI 上游没有文件上传端点：inline file/image 输入无法落地为上游文件，
+	// 直接拒绝并提示改用纯文本消息。
+	_ = decoded
+	return nil, true, &inlineFileUploadError{
+		status:  http.StatusNotImplemented,
+		message: "inline file/image input is not available with the SDAI upstream (no upload endpoint); send the content as text instead",
 	}
-	fileID, err := s.uploadInlineFile(decoded)
-	if err != nil {
-		return nil, true, &inlineFileUploadError{status: http.StatusInternalServerError, message: "Failed to upload inline file.", err: err}
-	}
-	s.uploadCount++
-	s.inlineFileBytes += len(decoded.Data)
-	replacement := map[string]any{
-		"type":    decoded.ReplacementType,
-		"file_id": fileID,
-	}
-	if decoded.Filename != "" {
-		replacement["filename"] = decoded.Filename
-	}
-	if decoded.ContentType != "" {
-		replacement["mime_type"] = decoded.ContentType
-	}
-	return replacement, true, nil
-}
-
-func (s *inlineUploadState) uploadInlineFile(file inlineDecodedFile) (string, error) {
-	sum := sha256.Sum256(append([]byte(file.ContentType+"\x00"+file.Filename+"\x00"), file.Data...))
-	cacheKey := fmt.Sprintf("%x", sum[:])
-	if fileID, ok := s.uploadedByID[cacheKey]; ok && strings.TrimSpace(fileID) != "" {
-		return fileID, nil
-	}
-	contentType := strings.TrimSpace(file.ContentType)
-	if contentType == "" {
-		contentType = http.DetectContentType(file.Data)
-	}
-	result, err := s.handler.DS.UploadFile(s.ctx, s.auth, dsclient.UploadFileRequest{
-		Filename:    file.Filename,
-		ContentType: contentType,
-		ModelType:   s.modelType,
-		Data:        file.Data,
-	}, 3)
-	if err != nil {
-		return "", err
-	}
-	fileID := strings.TrimSpace(result.ID)
-	if fileID == "" {
-		return "", fmt.Errorf("upload succeeded without file id")
-	}
-	s.uploadedByID[cacheKey] = fileID
-	return fileID, nil
 }
 
 func decodeOpenAIInlineFileBlock(block map[string]any) (inlineDecodedFile, bool, error) {

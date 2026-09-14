@@ -43,7 +43,7 @@ func TestGoCompatSSEFixtures(t *testing.T) {
 		if err != nil {
 			t.Fatalf("marshal fixture %s failed: %v", name, err)
 		}
-		res := sse.ParseDeepSeekContentLine(append([]byte("data: "), raw...), fixture.ThinkingEnable, fixture.CurrentType)
+		res := sse.ParseSDAIContentLine(append([]byte("data: "), raw...), fixture.ThinkingEnable, fixture.CurrentType)
 		gotParts := make([]map[string]any, 0, len(res.Parts))
 		for _, p := range res.Parts {
 			gotParts = append(gotParts, map[string]any{

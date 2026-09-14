@@ -18,10 +18,12 @@ func TestHandleResponsesStreamDoesNotEmitReasoningTextCompatEvents(t *testing.T)
 	rec := httptest.NewRecorder()
 
 	b, _ := json.Marshal(map[string]any{
-		"p": "response/thinking_content",
-		"v": "thought",
+		"choices": []any{map[string]any{
+			"index": 0,
+			"delta": map[string]any{"content": "thought", "type": "think"},
+		}},
 	})
-	streamBody := "data: " + string(b) + "\n" + "data: [DONE]\n"
+	streamBody := "data: " + string(b) + "\n" + "data: DONE\n"
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(streamBody)),
@@ -45,13 +47,15 @@ func TestHandleResponsesStreamEmitsOutputTextDoneBeforeContentPartDone(t *testin
 
 	sseLine := func(v string) string {
 		b, _ := json.Marshal(map[string]any{
-			"p": "response/content",
-			"v": v,
+			"choices": []any{map[string]any{
+				"index": 0,
+				"delta": map[string]any{"content": v, "type": "text"},
+			}},
 		})
 		return "data: " + string(b) + "\n"
 	}
 
-	streamBody := sseLine("hello") + "data: [DONE]\n"
+	streamBody := sseLine("hello") + "data: DONE\n"
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(streamBody)),
@@ -79,13 +83,15 @@ func TestHandleResponsesStreamOutputTextDeltaCarriesItemIndexes(t *testing.T) {
 
 	sseLine := func(v string) string {
 		b, _ := json.Marshal(map[string]any{
-			"p": "response/content",
-			"v": v,
+			"choices": []any{map[string]any{
+				"index": 0,
+				"delta": map[string]any{"content": v, "type": "text"},
+			}},
 		})
 		return "data: " + string(b) + "\n"
 	}
 
-	streamBody := sseLine("hello") + "data: [DONE]\n"
+	streamBody := sseLine("hello") + "data: DONE\n"
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(streamBody)),
@@ -117,14 +123,16 @@ func TestHandleResponsesStreamCoalescesSmallOutputTextDeltas(t *testing.T) {
 	var streamBody strings.Builder
 	for i := 0; i < 100; i++ {
 		b, _ := json.Marshal(map[string]any{
-			"p": "response/content",
-			"v": "字",
+			"choices": []any{map[string]any{
+				"index": 0,
+				"delta": map[string]any{"content": "字", "type": "text"},
+			}},
 		})
 		streamBody.WriteString("data: ")
 		streamBody.WriteString(string(b))
 		streamBody.WriteString("\n")
 	}
-	streamBody.WriteString("data: [DONE]\n")
+	streamBody.WriteString("data: DONE\n")
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(streamBody.String())),
@@ -158,15 +166,17 @@ func TestHandleResponsesStreamEmitsDistinctToolCallIDsAcrossSeparateToolBlocks(t
 
 	sseLine := func(v string) string {
 		b, _ := json.Marshal(map[string]any{
-			"p": "response/content",
-			"v": v,
+			"choices": []any{map[string]any{
+				"index": 0,
+				"delta": map[string]any{"content": v, "type": "text"},
+			}},
 		})
 		return "data: " + string(b) + "\n"
 	}
 
 	streamBody := sseLine("前置文本\n<tool_calls>\n  <invoke name=\"read_file\">\n    <parameter name=\"path\">README.MD</parameter>\n  </invoke>\n</tool_calls>") +
 		sseLine("中间文本\n<tool_calls>\n  <invoke name=\"search\">\n    <parameter name=\"q\">golang</parameter>\n  </invoke>\n</tool_calls>") +
-		"data: [DONE]\n"
+		"data: DONE\n"
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(streamBody)),
@@ -209,13 +219,15 @@ func TestHandleResponsesStreamRequiredToolChoiceFailure(t *testing.T) {
 
 	sseLine := func(v string) string {
 		b, _ := json.Marshal(map[string]any{
-			"p": "response/content",
-			"v": v,
+			"choices": []any{map[string]any{
+				"index": 0,
+				"delta": map[string]any{"content": v, "type": "text"},
+			}},
 		})
 		return "data: " + string(b) + "\n"
 	}
 
-	streamBody := sseLine("plain text only") + "data: [DONE]\n"
+	streamBody := sseLine("plain text only") + "data: DONE\n"
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(streamBody)),
@@ -241,15 +253,19 @@ func TestHandleResponsesStreamFailsWhenUpstreamHasOnlyThinking(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 	rec := httptest.NewRecorder()
 
+	// SDAI：type=think 的增量只在 thinkingEnabled=true 时进入可见通道，
+	// 否则仅进入 tool 检测通道（参数 path 兼容保留，恒定走 think 通道）。
 	sseLine := func(path, value string) string {
 		b, _ := json.Marshal(map[string]any{
-			"p": path,
-			"v": value,
+			"choices": []any{map[string]any{
+				"index": 0,
+				"delta": map[string]any{"content": value, "type": "think"},
+			}},
 		})
 		return "data: " + string(b) + "\n"
 	}
 
-	streamBody := sseLine("response/thinking_content", "Only thinking") + "data: [DONE]\n"
+	streamBody := sseLine("response/thinking_content", "Only thinking") + "data: DONE\n"
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(streamBody)),
@@ -279,15 +295,19 @@ func TestHandleResponsesStreamPromotesThinkingToolCallsOnFinalizeWithoutMidstrea
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 	rec := httptest.NewRecorder()
 
+	// SDAI：type=think 的增量只在 thinkingEnabled=true 时进入可见通道，
+	// 否则仅进入 tool 检测通道（参数 path 兼容保留，恒定走 think 通道）。
 	sseLine := func(path, value string) string {
 		b, _ := json.Marshal(map[string]any{
-			"p": path,
-			"v": value,
+			"choices": []any{map[string]any{
+				"index": 0,
+				"delta": map[string]any{"content": value, "type": "think"},
+			}},
 		})
 		return "data: " + string(b) + "\n"
 	}
 
-	streamBody := sseLine("response/thinking_content", `<tool_calls><invoke name="read_file"><parameter name="path">README.MD</parameter></invoke></tool_calls>`) + "data: [DONE]\n"
+	streamBody := sseLine("response/thinking_content", `<tool_calls><invoke name="read_file"><parameter name="path">README.MD</parameter></invoke></tool_calls>`) + "data: DONE\n"
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(streamBody)),
@@ -312,15 +332,19 @@ func TestHandleResponsesStreamPromotesHiddenThinkingDSMLToolCallsOnFinalize(t *t
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 	rec := httptest.NewRecorder()
 
+	// SDAI：type=think 的增量只在 thinkingEnabled=true 时进入可见通道，
+	// 否则仅进入 tool 检测通道（参数 path 兼容保留，恒定走 think 通道）。
 	sseLine := func(path, value string) string {
 		b, _ := json.Marshal(map[string]any{
-			"p": path,
-			"v": value,
+			"choices": []any{map[string]any{
+				"index": 0,
+				"delta": map[string]any{"content": value, "type": "think"},
+			}},
 		})
 		return "data: " + string(b) + "\n"
 	}
 
-	streamBody := sseLine("response/thinking_content", `<|DSML|tool_calls><|DSML|invoke name="read_file"><|DSML|parameter name="path">README.MD</|DSML|parameter></|DSML|invoke></|DSML|tool_calls>`) + "data: [DONE]\n"
+	streamBody := sseLine("response/thinking_content", `<|DSML|tool_calls><|DSML|invoke name="read_file"><|DSML|parameter name="path">README.MD</|DSML|parameter></|DSML|invoke></|DSML|tool_calls>`) + "data: DONE\n"
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(streamBody)),
@@ -350,8 +374,8 @@ func TestHandleResponsesNonStreamRequiredToolChoiceViolation(t *testing.T) {
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body: io.NopCloser(strings.NewReader(
-			`data: {"p":"response/content","v":"plain text only"}` + "\n" +
-				`data: [DONE]` + "\n",
+			`data: {"choices":[{"index":0,"delta":{"content":"plain text only","type":"text"}}]}` + "\n" +
+				`data: DONE` + "\n",
 		)),
 	}
 	policy := promptcompat.ToolChoicePolicy{
@@ -376,9 +400,9 @@ func TestHandleResponsesNonStreamRequiredToolChoiceIgnoresThinkingToolPayloadWhe
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body: io.NopCloser(strings.NewReader(
-			`data: {"p":"response/thinking_content","v":"{\"tool_calls\":[{\"name\":\"read_file\",\"input\":{\"path\":\"README.MD\"}}]}"}` + "\n" +
-				`data: {"p":"response/content","v":"plain text only"}` + "\n" +
-				`data: [DONE]` + "\n",
+			`data: {"choices":[{"index":0,"delta":{"content":"{\"tool_calls\":[{\"name\":\"read_file\",\"input\":{\"path\":\"README.MD\"}}]}","type":"think"}}]}` + "\n" +
+				`data: {"choices":[{"index":0,"delta":{"content":"plain text only","type":"text"}}]}` + "\n" +
+				`data: DONE` + "\n",
 		)),
 	}
 	policy := promptcompat.ToolChoicePolicy{
@@ -403,8 +427,8 @@ func TestHandleResponsesNonStreamSingleAttemptReturns503WhenUpstreamOutputEmpty(
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body: io.NopCloser(strings.NewReader(
-			`data: {"p":"response/content","v":""}` + "\n" +
-				`data: [DONE]` + "\n",
+			`data: {"choices":[{"index":0,"delta":{"content":"","type":"text"}}]}` + "\n" +
+				`data: DONE` + "\n",
 		)),
 	}
 
@@ -419,14 +443,19 @@ func TestHandleResponsesNonStreamSingleAttemptReturns503WhenUpstreamOutputEmpty(
 	}
 }
 
-func TestHandleResponsesNonStreamSingleAttemptReturnsContentFilterErrorWhenUpstreamFilteredWithoutOutput(t *testing.T) {
+func TestHandleResponsesNonStreamSingleAttemptContentFilterRemoved(t *testing.T) {
+	// SDAI 上游没有 content_filter 信号。
+	t.Skip("content_filter is not an SDAI upstream signal")
+}
+
+func testHandleResponsesNonStreamSingleAttemptReturnsContentFilterErrorWhenUpstreamFilteredWithoutOutput(t *testing.T) {
 	h := &Handler{}
 	rec := httptest.NewRecorder()
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body: io.NopCloser(strings.NewReader(
 			`data: {"code":"content_filter"}` + "\n" +
-				`data: [DONE]` + "\n",
+				`data: DONE` + "\n",
 		)),
 	}
 
@@ -447,8 +476,8 @@ func TestHandleResponsesNonStreamSingleAttemptReturns429WhenUpstreamHasOnlyThink
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body: io.NopCloser(strings.NewReader(
-			`data: {"p":"response/thinking_content","v":"Only thinking"}` + "\n" +
-				`data: [DONE]` + "\n",
+			`data: {"choices":[{"index":0,"delta":{"content":"Only thinking","type":"think"}}]}` + "\n" +
+				`data: DONE` + "\n",
 		)),
 	}
 
@@ -469,8 +498,8 @@ func TestHandleResponsesNonStreamPromotesThinkingToolCallsWhenTextEmpty(t *testi
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body: io.NopCloser(strings.NewReader(
-			`data: {"p":"response/thinking_content","v":"<tool_calls><invoke name=\"read_file\"><parameter name=\"path\">README.MD</parameter></invoke></tool_calls>"}` + "\n" +
-				`data: [DONE]` + "\n",
+			`data: {"choices":[{"index":0,"delta":{"content":"<tool_calls><invoke name=\"read_file\"><parameter name=\"path\">README.MD</parameter></invoke></tool_calls>","type":"think"}}]}` + "\n" +
+				`data: DONE` + "\n",
 		)),
 	}
 
@@ -495,8 +524,8 @@ func TestHandleResponsesNonStreamPromotesHiddenThinkingDSMLToolCallsWhenTextEmpt
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body: io.NopCloser(strings.NewReader(
-			`data: {"p":"response/thinking_content","v":"<|DSML|tool_calls><|DSML|invoke name=\"read_file\"><|DSML|parameter name=\"path\">README.MD</|DSML|parameter></|DSML|invoke></|DSML|tool_calls>"}` + "\n" +
-				`data: [DONE]` + "\n",
+			`data: {"choices":[{"index":0,"delta":{"content":"<|DSML|tool_calls><|DSML|invoke name=\"read_file\"><|DSML|parameter name=\"path\">README.MD</|DSML|parameter></|DSML|invoke></|DSML|tool_calls>","type":"think"}}]}` + "\n" +
+				`data: DONE` + "\n",
 		)),
 	}
 
@@ -542,10 +571,15 @@ func TestHandleResponsesStreamCoercesSchemaDeclaredStringArguments(t *testing.T)
 		},
 	}
 	sseLine := func(v string) string {
-		b, _ := json.Marshal(map[string]any{"p": "response/content", "v": v})
+		b, _ := json.Marshal(map[string]any{
+			"choices": []any{map[string]any{
+				"index": 0,
+				"delta": map[string]any{"content": v, "type": "text"},
+			}},
+		})
 		return "data: " + string(b) + "\n"
 	}
-	streamBody := sseLine(`<tool_calls><invoke name="Write">{"input":{"content":{"message":"hi"},"taskId":1}}</invoke></tool_calls>`) + "data: [DONE]\n"
+	streamBody := sseLine(`<tool_calls><invoke name="Write">{"input":{"content":{"message":"hi"},"taskId":1}}</invoke></tool_calls>`) + "data: DONE\n"
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(streamBody)),

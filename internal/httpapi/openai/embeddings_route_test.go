@@ -2,7 +2,6 @@ package openai
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -20,9 +19,7 @@ func newResolverWithConfigJSON(t *testing.T, cfgJSON string) (*config.Store, *au
 	t.Setenv("DS2API_CONFIG_JSON", cfgJSON)
 	store := config.LoadStore()
 	pool := account.NewPool(store)
-	resolver := auth.NewResolver(store, pool, func(_ context.Context, _ config.Account) (string, error) {
-		return "unused", nil
-	})
+	resolver := auth.NewResolver(store, pool)
 	return store, resolver
 }
 

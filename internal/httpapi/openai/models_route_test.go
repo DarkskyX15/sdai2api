@@ -40,8 +40,8 @@ func TestGetModelRouteDirectAndAlias(t *testing.T) {
 		}
 	})
 
-	t.Run("direct_vision", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/v1/models/deepseek-v4-vision", nil)
+	t.Run("direct_v32", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/v1/models/deepseek-v3.2", nil)
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {

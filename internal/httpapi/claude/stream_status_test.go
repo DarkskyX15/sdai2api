@@ -16,7 +16,7 @@ func (streamStatusClaudeOpenAIStub) ChatCompletions(w http.ResponseWriter, _ *ht
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\"},\"finish_reason\":null}]}\n\n"))
-	_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	_, _ = w.Write([]byte("data: DONE\n\n"))
 }
 
 type streamStatusClaudeStoreStub struct{}

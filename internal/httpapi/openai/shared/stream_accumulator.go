@@ -89,10 +89,7 @@ func (a *StreamAccumulator) applyTextPart(text string) StreamPartDelta {
 	}
 	a.RawText.WriteString(rawTrimmed)
 	delta := StreamPartDelta{Type: "text", RawText: rawTrimmed}
-	if a.SearchEnabled && sse.IsCitation(rawTrimmed) {
-		delta.CitationOnly = true
-		return delta
-	}
+	// SDAI 无联网搜索/引用标记，citation 检测移除。
 	cleanedText := CleanVisibleOutput(rawTrimmed, a.StripReferenceMarkers)
 	trimmed := sse.TrimContinuationOverlapFromBuilder(&a.Text, cleanedText)
 	if trimmed == "" {

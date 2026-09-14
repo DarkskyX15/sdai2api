@@ -50,8 +50,8 @@ func TestConsumeResponsesStreamAttemptMarksContextCancelledState(t *testing.T) {
 		nil,
 	)
 	resp := makeResponsesOpenAISSEHTTPResponse(
-		`data: {"p":"response/content","v":"hello"}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"hello","type":"text"}}]}`,
+		`data: DONE`,
 	)
 
 	h := &Handler{}

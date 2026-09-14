@@ -3,7 +3,6 @@ package claude
 import (
 	"ds2api/internal/assistantturn"
 	"ds2api/internal/responsehistory"
-	"ds2api/internal/sse"
 	"ds2api/internal/toolcall"
 	"ds2api/internal/toolstream"
 	"encoding/json"
@@ -83,7 +82,7 @@ func (s *claudeStreamRuntime) finalize(stopReason string, deferEmptyOutput bool)
 			}
 			if evt.Content != "" {
 				cleaned := cleanVisibleOutput(evt.Content, s.stripReferenceMarkers)
-				if cleaned == "" || (s.searchEnabled && sse.IsCitation(cleaned)) {
+				if cleaned == "" {
 					continue
 				}
 				if !s.textBlockOpen {

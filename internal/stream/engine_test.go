@@ -18,7 +18,7 @@ func TestConsumeSSEPrefersContextCancellationOverReadyParsedLines(t *testing.T) 
 
 	ConsumeSSE(ConsumeConfig{
 		Context:           ctx,
-		Body:              strings.NewReader("data: {\"p\":\"response/content\",\"v\":\"hello\"}\n\ndata: [DONE]\n"),
+		Body:              strings.NewReader("data: {\"p\":\"response/content\",\"v\":\"hello\"}\n\ndata: DONE\n"),
 		ThinkingEnabled:   false,
 		InitialType:       "text",
 		KeepAliveInterval: 0,

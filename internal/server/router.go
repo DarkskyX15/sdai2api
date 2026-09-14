@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -47,16 +46,8 @@ func NewApp() (*App, error) {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
 	pool := account.NewPool(store)
-	var dsClient *dsclient.Client
-	resolver := auth.NewResolver(store, pool, func(ctx context.Context, acc config.Account) (string, error) {
-		return dsClient.Login(ctx, acc)
-	})
-	dsClient = dsclient.NewClient(store, resolver)
-	if err := dsClient.PreloadPow(context.Background()); err != nil {
-		config.Logger.Warn("[PoW] init failed", "error", err)
-	} else {
-		config.Logger.Info("[PoW] pure Go solver ready")
-	}
+	resolver := auth.NewResolver(store, pool)
+	dsClient := dsclient.NewClient(store, resolver)
 	chatHistoryStore := chathistory.New(config.ChatHistoryPath())
 	if err := chatHistoryStore.Err(); err != nil {
 		config.Logger.Warn("[chat_history] unavailable", "path", chatHistoryStore.Path(), "error", err)

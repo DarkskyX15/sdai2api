@@ -190,7 +190,8 @@ func TestPoolGlobalMaxInflightEnv(t *testing.T) {
 	}
 }
 
-func TestPoolDropsLegacyTokenOnlyAccountOnLoad(t *testing.T) {
+func TestPoolKeepsTokenOnlyAccount(t *testing.T) {
+	// SDAI：token 即凭据，token-only 账号合法（以 token 摘要为标识）。
 	t.Setenv("DS2API_ACCOUNT_MAX_INFLIGHT", "1")
 	t.Setenv("DS2API_CONFIG_JSON", `{
 		"keys":["k1"],
@@ -199,15 +200,19 @@ func TestPoolDropsLegacyTokenOnlyAccountOnLoad(t *testing.T) {
 
 	pool := NewPool(config.LoadStore())
 	status := pool.Status()
-	if got, ok := status["total"].(int); !ok || got != 0 {
+	if got, ok := status["total"].(int); !ok || got != 1 {
 		t.Fatalf("unexpected total in pool status: %#v", status["total"])
 	}
-	if got, ok := status["available"].(int); !ok || got != 0 {
+	if got, ok := status["available"].(int); !ok || got != 1 {
 		t.Fatalf("unexpected available in pool status: %#v", status["available"])
 	}
 
-	if _, ok := pool.Acquire("", nil); ok {
-		t.Fatalf("expected acquire to fail for token-only account")
+	acc, ok := pool.Acquire("", nil)
+	if !ok {
+		t.Fatalf("expected acquire to succeed for token-only account")
+	}
+	if acc.Token != "token-only-account" {
+		t.Fatalf("unexpected account token: %q", acc.Token)
 	}
 }
 

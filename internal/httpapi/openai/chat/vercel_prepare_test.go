@@ -93,11 +93,33 @@ func TestStreamLeaseTTL(t *testing.T) {
 	}
 }
 
-func TestHandleVercelStreamPrepareAppliesCurrentInputFile(t *testing.T) {
+// vercelPrepareDSStub SDAI 版 prepare 测试桩。
+type vercelPrepareDSStub struct {
+	resp *http.Response
+}
+
+func (m *vercelPrepareDSStub) CreateSession(_ context.Context, _ *auth.RequestAuth, _ int) (string, error) {
+	return "session-id", nil
+}
+
+func (m *vercelPrepareDSStub) CallCompletion(_ context.Context, _ *auth.RequestAuth, _ map[string]any, _ int) (*http.Response, error) {
+	return m.resp, nil
+}
+
+func (m *vercelPrepareDSStub) DeleteSessionForToken(_ context.Context, _ string, _ string) (*dsclient.DeleteSessionResult, error) {
+	return &dsclient.DeleteSessionResult{Success: true}, nil
+}
+
+func (m *vercelPrepareDSStub) DeleteAllSessionsForToken(_ context.Context, _ string) error {
+	return nil
+}
+
+func TestHandleVercelStreamPreparePassesThroughNormalizedContext(t *testing.T) {
+	// SDAI：current_input_file 短路，归一化上下文直接进入 payload.content。
 	t.Setenv("VERCEL", "1")
 	t.Setenv("DS2API_VERCEL_INTERNAL_SECRET", "stream-secret")
 
-	ds := &inlineUploadDSStub{}
+	ds := &vercelPrepareDSStub{}
 	h := &Handler{
 		Store: mockOpenAIConfig{
 			currentInputEnabled: true,
@@ -122,9 +144,6 @@ func TestHandleVercelStreamPrepareAppliesCurrentInputFile(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if len(ds.uploadCalls) != 1 {
-		t.Fatalf("expected 1 current input upload, got %d", len(ds.uploadCalls))
-	}
 
 	var body map[string]any
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
@@ -134,16 +153,12 @@ func TestHandleVercelStreamPrepareAppliesCurrentInputFile(t *testing.T) {
 	if payload == nil {
 		t.Fatalf("expected payload object, got %#v", body["payload"])
 	}
-	promptText, _ := payload["prompt"].(string)
-	if !strings.Contains(promptText, "Continue from the latest state in the attached DS2API_HISTORY.txt context.") {
-		t.Fatalf("expected continuation prompt, got %s", promptText)
+	content, _ := payload["content"].(string)
+	if !strings.Contains(content, "latest user turn") {
+		t.Fatalf("expected normalized context in payload content, got %s", content)
 	}
-	if strings.Contains(promptText, "first user turn") || strings.Contains(promptText, "latest user turn") {
-		t.Fatalf("expected original turns hidden from prompt, got %s", promptText)
-	}
-	refIDs, _ := payload["ref_file_ids"].([]any)
-	if len(refIDs) == 0 || refIDs[0] != "file-inline-1" {
-		t.Fatalf("expected uploaded history file first in ref_file_ids, got %#v", payload["ref_file_ids"])
+	if _, has := payload["ref_file_ids"]; has {
+		t.Fatalf("expected no ref_file_ids under SDAI, got %#v", payload["ref_file_ids"])
 	}
 }
 
@@ -154,7 +169,7 @@ func TestHandleVercelStreamPrepareUsesHalfwidthDSMLToolPrompt(t *testing.T) {
 	h := &Handler{
 		Store: mockOpenAIConfig{},
 		Auth:  streamStatusAuthStub{},
-		DS:    &inlineUploadDSStub{},
+		DS:    &vercelPrepareDSStub{},
 	}
 
 	reqBody, _ := json.Marshal(map[string]any{
@@ -197,8 +212,8 @@ func TestHandleVercelStreamPrepareUsesHalfwidthDSMLToolPrompt(t *testing.T) {
 	}
 	finalPrompt, _ := body["final_prompt"].(string)
 	payload, _ := body["payload"].(map[string]any)
-	payloadPrompt, _ := payload["prompt"].(string)
-	for label, promptText := range map[string]string{"final_prompt": finalPrompt, "payload.prompt": payloadPrompt} {
+	payloadPrompt, _ := payload["content"].(string)
+	for label, promptText := range map[string]string{"final_prompt": finalPrompt, "payload.content": payloadPrompt} {
 		if !strings.Contains(promptText, "<|DSML|tool_calls>") || !strings.Contains(promptText, "Tag punctuation alphabet: ASCII < > / = \" plus the halfwidth pipe |.") {
 			t.Fatalf("expected %s to contain halfwidth DSML tool instructions, got %q", label, promptText)
 		}
@@ -225,15 +240,7 @@ func (m *vercelReleaseAutoDeleteDSStub) CreateSession(_ context.Context, _ *auth
 	return "session-id", nil
 }
 
-func (m *vercelReleaseAutoDeleteDSStub) GetPow(_ context.Context, _ *auth.RequestAuth, _ int) (string, error) {
-	return "pow", nil
-}
-
-func (m *vercelReleaseAutoDeleteDSStub) UploadFile(_ context.Context, _ *auth.RequestAuth, _ dsclient.UploadFileRequest, _ int) (*dsclient.UploadFileResult, error) {
-	return &dsclient.UploadFileResult{ID: "file-id", Filename: "file.txt", Bytes: 1, Status: "uploaded"}, nil
-}
-
-func (m *vercelReleaseAutoDeleteDSStub) CallCompletion(_ context.Context, _ *auth.RequestAuth, _ map[string]any, _ string, _ int) (*http.Response, error) {
+func (m *vercelReleaseAutoDeleteDSStub) CallCompletion(_ context.Context, _ *auth.RequestAuth, _ map[string]any, _ int) (*http.Response, error) {
 	return m.resp, nil
 }
 
@@ -314,11 +321,12 @@ func TestHandleVercelStreamReleaseTriggersAutoDelete(t *testing.T) {
 	}
 }
 
-func TestHandleVercelStreamPrepareUploadsToolsSeparately(t *testing.T) {
+func TestHandleVercelStreamPrepareInlinesToolsPrompt(t *testing.T) {
+	// SDAI：无文件上传，tool schema 以提示词内联方式进入 final_prompt 与 payload.content。
 	t.Setenv("VERCEL", "1")
 	t.Setenv("DS2API_VERCEL_INTERNAL_SECRET", "stream-secret")
 
-	ds := &inlineUploadDSStub{}
+	ds := &vercelPrepareDSStub{}
 	h := &Handler{
 		Store: mockOpenAIConfig{currentInputEnabled: true},
 		Auth:  streamStatusAuthStub{},
@@ -353,15 +361,6 @@ func TestHandleVercelStreamPrepareUploadsToolsSeparately(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if len(ds.uploadCalls) != 2 {
-		t.Fatalf("expected history and tools uploads, got %d", len(ds.uploadCalls))
-	}
-	if ds.uploadCalls[0].Filename != "DS2API_HISTORY.txt" || ds.uploadCalls[1].Filename != "DS2API_TOOLS.txt" {
-		t.Fatalf("unexpected upload filenames: %#v", ds.uploadCalls)
-	}
-	if strings.Contains(string(ds.uploadCalls[0].Data), "Description: search docs") {
-		t.Fatalf("history transcript should not embed tool descriptions, got %q", string(ds.uploadCalls[0].Data))
-	}
 
 	var body map[string]any
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
@@ -369,71 +368,36 @@ func TestHandleVercelStreamPrepareUploadsToolsSeparately(t *testing.T) {
 	}
 	finalPrompt, _ := body["final_prompt"].(string)
 	payload, _ := body["payload"].(map[string]any)
-	payloadPrompt, _ := payload["prompt"].(string)
-	for label, promptText := range map[string]string{"final_prompt": finalPrompt, "payload.prompt": payloadPrompt} {
-		if !strings.Contains(promptText, "DS2API_TOOLS.txt") || !strings.Contains(promptText, "TOOL CALL FORMAT") {
-			t.Fatalf("expected %s to reference tools file and retain tool instructions, got %q", label, promptText)
+	payloadContent, _ := payload["content"].(string)
+	for label, text := range map[string]string{"final_prompt": finalPrompt, "payload.content": payloadContent} {
+		if !strings.Contains(text, "TOOL CALL FORMAT") {
+			t.Fatalf("expected %s to retain tool call format instructions, got %q", label, text)
 		}
-		if strings.Contains(promptText, "Description: search docs") {
-			t.Fatalf("expected %s not to inline tool descriptions, got %q", label, promptText)
+		if !strings.Contains(text, "search docs") {
+			t.Fatalf("expected %s to inline tool schema, got %q", label, text)
 		}
-	}
-	refIDs, _ := payload["ref_file_ids"].([]any)
-	if len(refIDs) < 2 || refIDs[0] != "file-inline-1" || refIDs[1] != "file-inline-2" {
-		t.Fatalf("expected history and tools ref ids first, got %#v", payload["ref_file_ids"])
 	}
 }
 
 func TestHandleVercelStreamPrepareMapsCurrentInputFileManagedAuthFailureTo401(t *testing.T) {
-	t.Setenv("VERCEL", "1")
-	t.Setenv("DS2API_VERCEL_INTERNAL_SECRET", "stream-secret")
-
-	ds := &inlineUploadDSStub{
-		uploadErr: &dsclient.RequestFailure{Op: "upload file", Kind: dsclient.FailureManagedUnauthorized, Message: "expired token"},
-	}
-	h := &Handler{
-		Store: mockOpenAIConfig{
-			currentInputEnabled: true,
-		},
-		Auth: streamStatusManagedAuthStub{},
-		DS:   ds,
-	}
-
-	reqBody, _ := json.Marshal(map[string]any{
-		"model":    "deepseek-v4-flash",
-		"messages": historySplitTestMessages(),
-		"stream":   true,
-	})
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions?__stream_prepare=1", strings.NewReader(string(reqBody)))
-	req.Header.Set("Authorization", "Bearer managed-key")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Ds2-Internal-Token", "stream-secret")
-	rec := httptest.NewRecorder()
-
-	h.handleVercelStreamPrepare(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d body=%s", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), "Please re-login the account in admin") {
-		t.Fatalf("expected managed auth error message, got %s", rec.Body.String())
-	}
+	// SDAI：current_input_file 短路，不再产生上传类 401；此场景由 token 失效路径覆盖。
+	t.Skip("current_input_file is a no-op under SDAI upstream")
 }
 
-func TestHandleVercelStreamSwitchReuploadsCurrentInputFile(t *testing.T) {
+func TestHandleVercelStreamSwitchIssuesFreshPayload(t *testing.T) {
+	// SDAI：切号 = 新 uuid + 原始 payload，无 current_input_file 重传。
 	t.Setenv("VERCEL", "1")
 	t.Setenv("DS2API_VERCEL_INTERNAL_SECRET", "stream-secret")
+	t.Setenv("DS2API_CONFIG_PATH", t.TempDir()+"/config.json")
 	t.Setenv("DS2API_CONFIG_JSON", `{
 		"keys":["managed-key"],
 		"accounts":[
-			{"email":"acc1@test.com","password":"pwd"},
-			{"email":"acc2@test.com","password":"pwd"}
+			{"email":"acc1@test.com","token":"token-acc1"},
+			{"email":"acc2@test.com","token":"token-acc2"}
 		]
 	}`)
 	store := config.LoadStore()
-	resolver := auth.NewResolver(store, account.NewPool(store), func(_ context.Context, acc config.Account) (string, error) {
-		return "token-" + acc.Identifier(), nil
-	})
+	resolver := auth.NewResolver(store, account.NewPool(store))
 	authReq := httptest.NewRequest(http.MethodPost, "/", nil)
 	authReq.Header.Set("Authorization", "Bearer managed-key")
 	a, err := resolver.Determine(authReq)
@@ -442,7 +406,7 @@ func TestHandleVercelStreamSwitchReuploadsCurrentInputFile(t *testing.T) {
 	}
 	defer resolver.Release(a)
 
-	ds := &inlineUploadDSStub{}
+	ds := &vercelPrepareDSStub{}
 	h := &Handler{
 		Store: mockOpenAIConfig{currentInputEnabled: true},
 		Auth:  resolver,
@@ -481,26 +445,20 @@ func TestHandleVercelStreamSwitchReuploadsCurrentInputFile(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if len(ds.uploadCalls) != 2 {
-		t.Fatalf("expected current input and tools reupload on switched account, got %d", len(ds.uploadCalls))
-	}
-	if ds.uploadCalls[0].Filename != "DS2API_HISTORY.txt" || ds.uploadCalls[1].Filename != "DS2API_TOOLS.txt" {
-		t.Fatalf("unexpected reupload filenames: %#v", ds.uploadCalls)
-	}
 	var body map[string]any
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode failed: %v", err)
 	}
-	if body["deepseek_token"] != "token-acc2@test.com" {
+	if body["deepseek_token"] != "token-acc2" {
 		t.Fatalf("expected switched account token, got %#v", body["deepseek_token"])
 	}
 	payload, _ := body["payload"].(map[string]any)
-	refIDs, _ := payload["ref_file_ids"].([]any)
-	if len(refIDs) != 3 || refIDs[0] != "file-inline-1" || refIDs[1] != "file-inline-2" || refIDs[2] != "client-file" {
-		t.Fatalf("expected reuploaded current input ref plus client ref, got %#v", payload["ref_file_ids"])
+	newUUID, _ := payload["uuid"].(string)
+	if newUUID == "" {
+		t.Fatalf("expected non-empty uuid in switched payload, got %#v", payload["uuid"])
 	}
-	promptText, _ := payload["prompt"].(string)
-	if !strings.Contains(promptText, "DS2API_TOOLS.txt") {
-		t.Fatalf("expected switched payload prompt to retain tools file reference, got %q", promptText)
+	contentText, _ := payload["content"].(string)
+	if !strings.Contains(contentText, "DS2API_TOOLS.txt") {
+		t.Fatalf("expected switched payload content to retain tools file reference, got %q", contentText)
 	}
 }

@@ -23,15 +23,7 @@ func (m *autoDeleteModeDSStub) CreateSession(_ context.Context, _ *auth.RequestA
 	return "session-id", nil
 }
 
-func (m *autoDeleteModeDSStub) GetPow(_ context.Context, _ *auth.RequestAuth, _ int) (string, error) {
-	return "pow", nil
-}
-
-func (m *autoDeleteModeDSStub) UploadFile(_ context.Context, _ *auth.RequestAuth, _ dsclient.UploadFileRequest, _ int) (*dsclient.UploadFileResult, error) {
-	return &dsclient.UploadFileResult{ID: "file-id", Filename: "file.txt", Bytes: 1, Status: "uploaded"}, nil
-}
-
-func (m *autoDeleteModeDSStub) CallCompletion(_ context.Context, _ *auth.RequestAuth, _ map[string]any, _ string, _ int) (*http.Response, error) {
+func (m *autoDeleteModeDSStub) CallCompletion(_ context.Context, _ *auth.RequestAuth, _ map[string]any, _ int) (*http.Response, error) {
 	return m.resp, nil
 }
 
@@ -69,8 +61,8 @@ func TestChatCompletionsAutoDeleteModes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ds := &autoDeleteModeDSStub{
 				resp: makeOpenAISSEHTTPResponse(
-					`data: {"p":"response/content","v":"hello"}`,
-					"data: [DONE]",
+					`data: {"choices":[{"index":0,"delta":{"content":"hello","type":"text"}}]}`,
+					"data: DONE",
 				),
 			}
 			h := &Handler{

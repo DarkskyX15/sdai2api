@@ -126,9 +126,7 @@ func (s *claudeStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Parse
 		if cleanedText == "" {
 			continue
 		}
-		if p.Type != "thinking" && s.searchEnabled && sse.IsCitation(cleanedText) {
-			continue
-		}
+		// SDAI 无搜索引用标记，citation 过滤移除。
 		contentSeen = true
 
 		if p.Type == "thinking" {
@@ -211,7 +209,7 @@ func (s *claudeStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Parse
 				continue
 			}
 			cleaned := cleanVisibleOutput(evt.Content, s.stripReferenceMarkers)
-			if cleaned == "" || (s.searchEnabled && sse.IsCitation(cleaned)) {
+			if cleaned == "" {
 				continue
 			}
 			s.closeThinkingBlock()

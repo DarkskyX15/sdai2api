@@ -15,7 +15,6 @@ import (
 
 	"ds2api/internal/auth"
 	"ds2api/internal/chathistory"
-	dsclient "ds2api/internal/deepseek/client"
 )
 
 type testGeminiConfig struct{}
@@ -48,10 +47,9 @@ func (testGeminiAuth) Release(_ *auth.RequestAuth) {}
 
 //nolint:unused // reserved test double for native Gemini DS-call path coverage.
 type testGeminiDS struct {
-	resp        *http.Response
-	err         error
-	uploadCalls []dsclient.UploadFileRequest
-	payloads    []map[string]any
+	resp     *http.Response
+	err      error
+	payloads []map[string]any
 }
 
 //nolint:unused // reserved test double for native Gemini DS-call path coverage.
@@ -60,22 +58,7 @@ func (m *testGeminiDS) CreateSession(_ context.Context, _ *auth.RequestAuth, _ i
 }
 
 //nolint:unused // reserved test double for native Gemini DS-call path coverage.
-func (m *testGeminiDS) GetPow(_ context.Context, _ *auth.RequestAuth, _ int) (string, error) {
-	return "pow", nil
-}
-
-//nolint:unused // reserved test double for native Gemini DS-call path coverage.
-func (m *testGeminiDS) UploadFile(_ context.Context, _ *auth.RequestAuth, req dsclient.UploadFileRequest, _ int) (*dsclient.UploadFileResult, error) {
-	m.uploadCalls = append(m.uploadCalls, req)
-	id := "file-gemini-history"
-	if len(m.uploadCalls) > 1 {
-		id = "file-gemini-tools"
-	}
-	return &dsclient.UploadFileResult{ID: id}, nil
-}
-
-//nolint:unused // reserved test double for native Gemini DS-call path coverage.
-func (m *testGeminiDS) CallCompletion(_ context.Context, _ *auth.RequestAuth, payload map[string]any, _ string, _ int) (*http.Response, error) {
+func (m *testGeminiDS) CallCompletion(_ context.Context, _ *auth.RequestAuth, payload map[string]any, _ int) (*http.Response, error) {
 	m.payloads = append(m.payloads, payload)
 	if m.err != nil {
 		return nil, m.err
@@ -115,7 +98,7 @@ func (s *geminiOpenAISuccessStub) ChatCompletions(w http.ResponseWriter, r *http
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello \"},\"finish_reason\":null}]}\n\n"))
 		_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"world\"},\"finish_reason\":\"stop\"}]}\n\n"))
-		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+		_, _ = w.Write([]byte("data: DONE\n\n"))
 		return
 	}
 	out := s.body
@@ -140,9 +123,10 @@ func makeGeminiUpstreamResponse(lines ...string) *http.Response {
 	}
 }
 
-func TestGeminiDirectAppliesCurrentInputFile(t *testing.T) {
+func TestGeminiDirectRecordsHistoryWithoutCurrentInputFile(t *testing.T) {
+	// SDAI：current_input_file 短路，上下文直接透传 content。
 	ds := &testGeminiDS{
-		resp: makeGeminiUpstreamResponse(`data: {"p":"response/content","v":"ok"}`),
+		resp: makeGeminiUpstreamResponse(`data: {"choices":[{"index":0,"delta":{"content":"ok","type":"text"}}]}` + "\ndata: DONE"),
 	}
 	historyStore := chathistory.New(filepath.Join(t.TempDir(), "history.json"))
 	h := &Handler{
@@ -163,22 +147,12 @@ func TestGeminiDirectAppliesCurrentInputFile(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if len(ds.uploadCalls) != 1 {
-		t.Fatalf("expected one current input upload, got %d", len(ds.uploadCalls))
-	}
-	if ds.uploadCalls[0].Filename != "DS2API_HISTORY.txt" {
-		t.Fatalf("unexpected upload filename: %q", ds.uploadCalls[0].Filename)
-	}
 	if len(ds.payloads) != 1 {
 		t.Fatalf("expected one completion payload, got %d", len(ds.payloads))
 	}
-	refIDs, _ := ds.payloads[0]["ref_file_ids"].([]any)
-	if len(refIDs) != 1 || refIDs[0] != "file-gemini-history" {
-		t.Fatalf("expected uploaded history ref id, got %#v", ds.payloads[0]["ref_file_ids"])
-	}
-	prompt, _ := ds.payloads[0]["prompt"].(string)
-	if !strings.Contains(prompt, "Continue from the latest state in the attached DS2API_HISTORY.txt context.") {
-		t.Fatalf("expected continuation prompt, got %q", prompt)
+	content, _ := ds.payloads[0]["content"].(string)
+	if !strings.Contains(content, "hello from gemini") {
+		t.Fatalf("expected passthrough content to include user text, got %q", content)
 	}
 	snapshot, err := historyStore.Snapshot()
 	if err != nil {
@@ -197,17 +171,12 @@ func TestGeminiDirectAppliesCurrentInputFile(t *testing.T) {
 	if full.Content != "ok" {
 		t.Fatalf("expected raw upstream content, got %q", full.Content)
 	}
-	if full.HistoryText != string(ds.uploadCalls[0].Data) {
-		t.Fatalf("expected uploaded current input file to be persisted in history text")
-	}
-	if len(full.Messages) != 1 || !strings.Contains(full.Messages[0].Content, "Continue from the latest state in the attached DS2API_HISTORY.txt context.") {
-		t.Fatalf("expected persisted message to match upstream continuation prompt, got %#v", full.Messages)
-	}
 }
 
-func TestGeminiCurrentInputFileUploadsToolsSeparately(t *testing.T) {
+func TestGeminiCurrentInputFileDisabledInlinesToolsPrompt(t *testing.T) {
+	// SDAI：无文件上传，tool schema 以提示词内联方式进入 content。
 	ds := &testGeminiDS{
-		resp: makeGeminiUpstreamResponse(`data: {"p":"response/content","v":"ok"}`),
+		resp: makeGeminiUpstreamResponse(`data: {"choices":[{"index":0,"delta":{"content":"ok","type":"text"}}]}`),
 	}
 	h := &Handler{
 		Store: testGeminiConfig{},
@@ -229,30 +198,12 @@ func TestGeminiCurrentInputFileUploadsToolsSeparately(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if len(ds.uploadCalls) != 2 {
-		t.Fatalf("expected history and tools uploads, got %d", len(ds.uploadCalls))
+	content, _ := ds.payloads[0]["content"].(string)
+	if !strings.Contains(content, "TOOL CALL FORMAT") || !strings.Contains(content, "eval_javascript") {
+		t.Fatalf("expected live content to inline tool format and schema, got %q", content)
 	}
-	if ds.uploadCalls[0].Filename != "DS2API_HISTORY.txt" || ds.uploadCalls[1].Filename != "DS2API_TOOLS.txt" {
-		t.Fatalf("unexpected upload filenames: %#v", ds.uploadCalls)
-	}
-	historyText := string(ds.uploadCalls[0].Data)
-	if strings.Contains(historyText, "Description: eval") {
-		t.Fatalf("history transcript should not embed tool descriptions, got %q", historyText)
-	}
-	toolsText := string(ds.uploadCalls[1].Data)
-	if !strings.Contains(toolsText, "# DS2API_TOOLS.txt") || !strings.Contains(toolsText, "Tool: eval_javascript") || !strings.Contains(toolsText, "Description: eval") {
-		t.Fatalf("expected tools transcript to include Gemini tool schema, got %q", toolsText)
-	}
-	refIDs, _ := ds.payloads[0]["ref_file_ids"].([]any)
-	if len(refIDs) < 2 || refIDs[0] != "file-gemini-history" || refIDs[1] != "file-gemini-tools" {
-		t.Fatalf("expected history and tools ref ids first, got %#v", ds.payloads[0]["ref_file_ids"])
-	}
-	prompt, _ := ds.payloads[0]["prompt"].(string)
-	if !strings.Contains(prompt, "DS2API_TOOLS.txt") || !strings.Contains(prompt, "TOOL CALL FORMAT") {
-		t.Fatalf("expected live prompt to reference tools file and retain format instructions, got %q", prompt)
-	}
-	if strings.Contains(prompt, "Description: eval") {
-		t.Fatalf("live prompt should not inline tool descriptions, got %q", prompt)
+	if _, has := ds.payloads[0]["ref_file_ids"]; has {
+		t.Fatalf("expected no ref_file_ids under SDAI, got %#v", ds.payloads[0]["ref_file_ids"])
 	}
 }
 
@@ -393,9 +344,9 @@ func TestStreamGenerateContentEmitsSSE(t *testing.T) {
 func TestNativeStreamGenerateContentEmitsThoughtParts(t *testing.T) {
 	h := &Handler{}
 	resp := makeGeminiUpstreamResponse(
-		`data: {"p":"response/thinking_content","v":"think"}`,
-		`data: {"p":"response/content","v":"answer"}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"think","type":"think"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"answer","type":"text"}}]}`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-2.5-pro:streamGenerateContent", nil)

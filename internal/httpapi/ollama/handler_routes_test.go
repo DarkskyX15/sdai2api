@@ -99,8 +99,8 @@ func TestGetOllamaModelRoute(t *testing.T) {
 		}
 	})
 
-	t.Run("direct_vision", func(t *testing.T) {
-		body := `{"model":"deepseek-v4-vision"}`
+	t.Run("direct_v32", func(t *testing.T) {
+		body := `{"model":"deepseek-v3.2"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/show", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()

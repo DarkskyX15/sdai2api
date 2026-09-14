@@ -118,7 +118,7 @@ func (h *Handler) applyCurrentInputFile(ctx context.Context, a *auth.RequestAuth
 	if h == nil {
 		return stdReq, nil
 	}
-	return (history.Service{Store: h.Store, DS: h.DS}).ApplyCurrentInputFile(ctx, a, stdReq)
+	return (history.Service{Store: h.Store}).ApplyCurrentInputFile(ctx, a, stdReq)
 }
 
 func mapCurrentInputFileError(err error) (int, string) {
@@ -137,7 +137,7 @@ func (h *Handler) handleGeminiDirectStream(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	streamReq := start.Request
-	h.handleStreamGenerateContentWithRetry(w, r, a, start.Response, start.Payload, start.Pow, streamReq, streamReq.ResponseModel, streamReq.PromptTokenText, streamReq.Thinking, streamReq.Search, streamReq.ToolNames, streamReq.ToolsRaw, historySession)
+	h.handleStreamGenerateContentWithRetry(w, r, a, start.Response, start.Payload, streamReq, streamReq.ResponseModel, streamReq.PromptTokenText, streamReq.Thinking, streamReq.Search, streamReq.ToolNames, streamReq.ToolsRaw, historySession)
 }
 
 func (h *Handler) proxyViaOpenAI(w http.ResponseWriter, r *http.Request, stream bool) bool {

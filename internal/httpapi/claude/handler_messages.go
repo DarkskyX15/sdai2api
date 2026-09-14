@@ -126,7 +126,7 @@ func (h *Handler) applyCurrentInputFile(ctx context.Context, a *auth.RequestAuth
 	if h == nil {
 		return stdReq, nil
 	}
-	return (history.Service{Store: h.Store, DS: h.DS}).ApplyCurrentInputFile(ctx, a, stdReq)
+	return (history.Service{Store: h.Store}).ApplyCurrentInputFile(ctx, a, stdReq)
 }
 
 func mapCurrentInputFileError(err error) (int, string) {
@@ -145,7 +145,7 @@ func (h *Handler) handleClaudeDirectStream(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	streamReq := start.Request
-	h.handleClaudeStreamRealtimeWithRetry(w, r, a, start.Response, start.Payload, start.Pow, streamReq, streamReq.ResponseModel, streamReq.Messages, streamReq.Thinking, streamReq.Search, streamReq.ToolNames, streamReq.ToolsRaw, streamReq.PromptTokenText, historySession)
+	h.handleClaudeStreamRealtimeWithRetry(w, r, a, start.Response, start.Payload, streamReq, streamReq.ResponseModel, streamReq.Messages, streamReq.Thinking, streamReq.Search, streamReq.ToolNames, streamReq.ToolsRaw, streamReq.PromptTokenText, historySession)
 }
 
 func (h *Handler) proxyViaOpenAI(w http.ResponseWriter, r *http.Request, store ConfigReader) bool {
@@ -361,7 +361,7 @@ func (h *Handler) handleClaudeStreamRealtime(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-func (h *Handler) handleClaudeStreamRealtimeWithRetry(w http.ResponseWriter, r *http.Request, a *auth.RequestAuth, resp *http.Response, payload map[string]any, pow string, stdReq promptcompat.StandardRequest, model string, messages []any, thinkingEnabled, searchEnabled bool, toolNames []string, toolsRaw any, promptTokenText string, historySession *responsehistory.Session) {
+func (h *Handler) handleClaudeStreamRealtimeWithRetry(w http.ResponseWriter, r *http.Request, a *auth.RequestAuth, resp *http.Response, payload map[string]any, stdReq promptcompat.StandardRequest, model string, messages []any, thinkingEnabled, searchEnabled bool, toolNames []string, toolsRaw any, promptTokenText string, historySession *responsehistory.Session) {
 	if resp.StatusCode != http.StatusOK {
 		defer func() { _ = resp.Body.Close() }()
 		body, _ := io.ReadAll(resp.Body)
@@ -398,7 +398,7 @@ func (h *Handler) handleClaudeStreamRealtimeWithRetry(w http.ResponseWriter, r *
 	)
 	streamRuntime.sendMessageStart()
 
-	completionruntime.ExecuteStreamWithRetry(r.Context(), h.DS, a, resp, payload, pow, completionruntime.StreamRetryOptions{
+	completionruntime.ExecuteStreamWithRetry(r.Context(), h.DS, a, resp, payload, completionruntime.StreamRetryOptions{
 		Surface:          "claude.messages",
 		Stream:           true,
 		RetryEnabled:     true,

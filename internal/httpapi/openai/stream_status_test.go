@@ -46,15 +46,7 @@ func (m streamStatusDSStub) CreateSession(_ context.Context, _ *auth.RequestAuth
 	return "session-id", nil
 }
 
-func (m streamStatusDSStub) GetPow(_ context.Context, _ *auth.RequestAuth, _ int) (string, error) {
-	return "pow", nil
-}
-
-func (m streamStatusDSStub) UploadFile(_ context.Context, _ *auth.RequestAuth, _ dsclient.UploadFileRequest, _ int) (*dsclient.UploadFileResult, error) {
-	return &dsclient.UploadFileResult{ID: "file-id", Filename: "file.txt", Bytes: 1, Status: "uploaded"}, nil
-}
-
-func (m streamStatusDSStub) CallCompletion(_ context.Context, _ *auth.RequestAuth, _ map[string]any, _ string, _ int) (*http.Response, error) {
+func (m streamStatusDSStub) CallCompletion(_ context.Context, _ *auth.RequestAuth, _ map[string]any, _ int) (*http.Response, error) {
 	return m.resp, nil
 }
 
@@ -75,15 +67,7 @@ func (m *streamStatusDSSeqStub) CreateSession(_ context.Context, _ *auth.Request
 	return "session-id", nil
 }
 
-func (m *streamStatusDSSeqStub) GetPow(_ context.Context, _ *auth.RequestAuth, _ int) (string, error) {
-	return "pow", nil
-}
-
-func (m *streamStatusDSSeqStub) UploadFile(_ context.Context, _ *auth.RequestAuth, _ dsclient.UploadFileRequest, _ int) (*dsclient.UploadFileResult, error) {
-	return &dsclient.UploadFileResult{ID: "file-id", Filename: "file.txt", Bytes: 1, Status: "uploaded"}, nil
-}
-
-func (m *streamStatusDSSeqStub) CallCompletion(_ context.Context, _ *auth.RequestAuth, payload map[string]any, _ string, _ int) (*http.Response, error) {
+func (m *streamStatusDSSeqStub) CallCompletion(_ context.Context, _ *auth.RequestAuth, payload map[string]any, _ int) (*http.Response, error) {
 	clone := make(map[string]any, len(payload))
 	for k, v := range payload {
 		clone[k] = v
@@ -137,7 +121,7 @@ func TestChatCompletionsStreamStatusCapturedAs200(t *testing.T) {
 	h := &openAITestSurface{
 		Store: mockOpenAIConfig{},
 		Auth:  streamStatusAuthStub{},
-		DS:    streamStatusDSStub{resp: makeOpenAISSEHTTPResponse(`data: {"p":"response/content","v":"hello"}`, "data: [DONE]")},
+		DS:    streamStatusDSStub{resp: makeOpenAISSEHTTPResponse(`data: {"choices":[{"index":0,"delta":{"content":"hello","type":"text"}}]}`, "data: DONE")},
 	}
 	r := chi.NewRouter()
 	r.Use(captureStatusMiddleware(&statuses))
@@ -166,7 +150,7 @@ func TestResponsesStreamStatusCapturedAs200(t *testing.T) {
 	h := &openAITestSurface{
 		Store: mockOpenAIConfig{},
 		Auth:  streamStatusAuthStub{},
-		DS:    streamStatusDSStub{resp: makeOpenAISSEHTTPResponse(`data: {"p":"response/content","v":"hello"}`, "data: [DONE]")},
+		DS:    streamStatusDSStub{resp: makeOpenAISSEHTTPResponse(`data: {"choices":[{"index":0,"delta":{"content":"hello","type":"text"}}]}`, "data: DONE")},
 	}
 	r := chi.NewRouter()
 	r.Use(captureStatusMiddleware(&statuses))
@@ -190,15 +174,20 @@ func TestResponsesStreamStatusCapturedAs200(t *testing.T) {
 	}
 }
 
-func TestChatCompletionsStreamContentFilterStopsNormallyWithoutLeak(t *testing.T) {
+func TestChatCompletionsStreamContentFilterRemoved(t *testing.T) {
+	// SDAI 上游没有 content_filter 信号；泄漏防护随 DeepSeek 专属解析一并移除。
+	t.Skip("content_filter is not an SDAI upstream signal")
+}
+
+func testChatCompletionsStreamContentFilterStopsNormallyWithoutLeak(t *testing.T) {
 	statuses := make([]int, 0, 1)
 	h := &openAITestSurface{
 		Store: mockOpenAIConfig{},
 		Auth:  streamStatusAuthStub{},
 		DS: streamStatusDSStub{resp: makeOpenAISSEHTTPResponse(
-			`data: {"p":"response/content","v":"合法前缀"}`,
+			`data: {"choices":[{"index":0,"delta":{"content":"合法前缀","type":"text"}}]}`,
 			`data: {"p":"response/status","v":"CONTENT_FILTER","accumulated_token_usage":77}`,
-			`data: {"p":"response/content","v":"CONTENT_FILTER你好，这个问题我暂时无法回答，让我们换个话题再聊聊吧。"}`,
+			`data: {"choices":[{"index":0,"delta":{"content":"CONTENT_FILTER你好，这个问题我暂时无法回答，让我们换个话题再聊聊吧。","type":"text"}}]}`,
 		)},
 	}
 	r := chi.NewRouter()
@@ -245,7 +234,7 @@ func TestChatCompletionsStreamEmitsFailureFrameWhenUpstreamOutputEmpty(t *testin
 	h := &openAITestSurface{
 		Store: mockOpenAIConfig{},
 		Auth:  streamStatusAuthStub{},
-		DS:    streamStatusDSStub{resp: makeOpenAISSEHTTPResponse("data: [DONE]")},
+		DS:    streamStatusDSStub{resp: makeOpenAISSEHTTPResponse("data: DONE")},
 	}
 	r := chi.NewRouter()
 	r.Use(captureStatusMiddleware(&statuses))
@@ -283,10 +272,13 @@ func TestChatCompletionsStreamEmitsFailureFrameWhenUpstreamOutputEmpty(t *testin
 	}
 }
 
-func TestChatCompletionsStreamRetriesEmptyOutputOnSameSession(t *testing.T) {
+func TestChatCompletionsStreamRetriesEmptyOutputWithContentSuffix(t *testing.T) {
 	ds := &streamStatusDSSeqStub{resps: []*http.Response{
-		makeOpenAISSEHTTPResponse(`data: {"response_message_id":42,"p":"response/thinking_content","v":"plan"}`, "data: [DONE]"),
-		makeOpenAISSEHTTPResponse(`data: {"p":"response/content","v":"visible"}`, "data: [DONE]"),
+		makeOpenAISSEHTTPResponse(
+			`data: {"choices":[{"index":0,"delta":{"content":"plan","type":"think"}}]}`,
+			`data: {"req_message_pk_id": 42}`,
+			"data: DONE"),
+		makeOpenAISSEHTTPResponse(`data: {"choices":[{"index":0,"delta":{"content":"visible","type":"text"}}]}`, "data: DONE"),
 	}}
 	h := &openAITestSurface{
 		Store: mockOpenAIConfig{},
@@ -306,16 +298,13 @@ func TestChatCompletionsStreamRetriesEmptyOutputOnSameSession(t *testing.T) {
 	if len(ds.payloads) != 2 {
 		t.Fatalf("expected one synthetic retry call, got %d", len(ds.payloads))
 	}
-	if ds.payloads[0]["chat_session_id"] != ds.payloads[1]["chat_session_id"] {
-		t.Fatalf("expected retry to reuse session, payloads=%#v", ds.payloads)
+	// SDAI fresh retry：新 uuid + content 后缀，无 parent_message_id。
+	retryContent := asString(ds.payloads[1]["content"])
+	if !strings.Contains(retryContent, "Previous reply had no visible output. Please regenerate the visible final answer or tool call now.") {
+		t.Fatalf("expected retry suffix in content, got %q", retryContent)
 	}
-	retryPrompt := asString(ds.payloads[1]["prompt"])
-	if !strings.Contains(retryPrompt, "Previous reply had no visible output. Please regenerate the visible final answer or tool call now.") {
-		t.Fatalf("expected retry suffix in prompt, got %q", retryPrompt)
-	}
-	// Verify multi-turn chaining: retry must set parent_message_id from first call's response_message_id.
-	if parentID, ok := ds.payloads[1]["parent_message_id"].(int); !ok || parentID != 42 {
-		t.Fatalf("expected retry parent_message_id=42, got %#v", ds.payloads[1]["parent_message_id"])
+	if _, has := ds.payloads[1]["parent_message_id"]; has {
+		t.Fatalf("expected no parent_message_id in SDAI retry payload, got %#v", ds.payloads[1]["parent_message_id"])
 	}
 
 	frames, done := parseSSEDataFrames(t, rec.Body.String())
@@ -345,8 +334,11 @@ func TestChatCompletionsStreamRetriesEmptyOutputOnSameSession(t *testing.T) {
 
 func TestChatCompletionsNonStreamRetriesThinkingOnlyOutput(t *testing.T) {
 	ds := &streamStatusDSSeqStub{resps: []*http.Response{
-		makeOpenAISSEHTTPResponse(`data: {"response_message_id":99,"p":"response/thinking_content","v":"plan"}`, "data: [DONE]"),
-		makeOpenAISSEHTTPResponse(`data: {"p":"response/content","v":"visible"}`, "data: [DONE]"),
+		makeOpenAISSEHTTPResponse(
+			`data: {"choices":[{"index":0,"delta":{"content":"plan","type":"think"}}]}`,
+			`data: {"req_message_pk_id": 99}`,
+			"data: DONE"),
+		makeOpenAISSEHTTPResponse(`data: {"choices":[{"index":0,"delta":{"content":"visible","type":"text"}}]}`, "data: DONE"),
 	}}
 	h := &openAITestSurface{
 		Store: mockOpenAIConfig{},
@@ -366,9 +358,9 @@ func TestChatCompletionsNonStreamRetriesThinkingOnlyOutput(t *testing.T) {
 	if len(ds.payloads) != 2 {
 		t.Fatalf("expected one synthetic retry call, got %d", len(ds.payloads))
 	}
-	// Verify multi-turn chaining.
-	if parentID, ok := ds.payloads[1]["parent_message_id"].(int); !ok || parentID != 99 {
-		t.Fatalf("expected retry parent_message_id=99, got %#v", ds.payloads[1]["parent_message_id"])
+	// SDAI fresh retry：content 追加重试后缀。
+	if content, _ := ds.payloads[1]["content"].(string); !strings.Contains(content, "Previous reply had no visible output") {
+		t.Fatalf("expected retry suffix in content, got %q", content)
 	}
 	var out map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
@@ -382,29 +374,9 @@ func TestChatCompletionsNonStreamRetriesThinkingOnlyOutput(t *testing.T) {
 	}
 }
 
-func TestChatCompletionsContentFilterDoesNotRetry(t *testing.T) {
-	ds := &streamStatusDSSeqStub{resps: []*http.Response{
-		makeOpenAISSEHTTPResponse(`data: {"code":"content_filter"}`),
-		makeOpenAISSEHTTPResponse(`data: {"p":"response/content","v":"visible"}`, "data: [DONE]"),
-	}}
-	h := &openAITestSurface{
-		Store: mockOpenAIConfig{},
-		Auth:  streamStatusAuthStub{},
-		DS:    ds,
-	}
-	reqBody := `{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"hi"}],"stream":false}`
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
-	req.Header.Set("Authorization", "Bearer direct-token")
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	newOpenAITestRouter(h).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected content_filter 400, got %d body=%s", rec.Code, rec.Body.String())
-	}
-	if len(ds.payloads) != 1 {
-		t.Fatalf("expected no retry on content_filter, got %d calls", len(ds.payloads))
-	}
+func TestChatCompletionsContentFilterRemoved(t *testing.T) {
+	// SDAI 上游没有 content_filter 信号。
+	t.Skip("content_filter is not an SDAI upstream signal")
 }
 
 func TestResponsesStreamUsageIgnoresBatchAccumulatedTokenUsage(t *testing.T) {
@@ -413,7 +385,7 @@ func TestResponsesStreamUsageIgnoresBatchAccumulatedTokenUsage(t *testing.T) {
 		Store: mockOpenAIConfig{},
 		Auth:  streamStatusAuthStub{},
 		DS: streamStatusDSStub{resp: makeOpenAISSEHTTPResponse(
-			`data: {"p":"response/content","v":"hello"}`,
+			`data: {"choices":[{"index":0,"delta":{"content":"hello","type":"text"}}]}`,
 			`data: {"p":"response","o":"BATCH","v":[{"p":"accumulated_token_usage","v":190},{"p":"quasi_status","v":"FINISHED"}]}`,
 		)},
 	}
@@ -457,8 +429,11 @@ func TestResponsesStreamUsageIgnoresBatchAccumulatedTokenUsage(t *testing.T) {
 
 func TestResponsesStreamRetriesThinkingOnlyOutput(t *testing.T) {
 	ds := &streamStatusDSSeqStub{resps: []*http.Response{
-		makeOpenAISSEHTTPResponse(`data: {"response_message_id":77,"p":"response/thinking_content","v":"plan"}`, "data: [DONE]"),
-		makeOpenAISSEHTTPResponse(`data: {"p":"response/content","v":"visible"}`, "data: [DONE]"),
+		makeOpenAISSEHTTPResponse(
+			`data: {"choices":[{"index":0,"delta":{"content":"plan","type":"think"}}]}`,
+			`data: {"req_message_pk_id": 77}`,
+			"data: DONE"),
+		makeOpenAISSEHTTPResponse(`data: {"choices":[{"index":0,"delta":{"content":"visible","type":"text"}}]}`, "data: DONE"),
 	}}
 	h := &openAITestSurface{
 		Store: mockOpenAIConfig{},
@@ -478,9 +453,9 @@ func TestResponsesStreamRetriesThinkingOnlyOutput(t *testing.T) {
 	if len(ds.payloads) != 2 {
 		t.Fatalf("expected one synthetic retry call, got %d", len(ds.payloads))
 	}
-	// Verify multi-turn chaining.
-	if parentID, ok := ds.payloads[1]["parent_message_id"].(int); !ok || parentID != 77 {
-		t.Fatalf("expected retry parent_message_id=77, got %#v", ds.payloads[1]["parent_message_id"])
+	// SDAI fresh retry：content 后缀，无 parent_message_id。
+	if content, _ := ds.payloads[1]["content"].(string); !strings.Contains(content, "Previous reply had no visible output") {
+		t.Fatalf("expected retry suffix in content, got %q", content)
 	}
 	body := rec.Body.String()
 	if strings.Contains(body, "response.failed") {
@@ -496,8 +471,11 @@ func TestResponsesStreamRetriesThinkingOnlyOutput(t *testing.T) {
 
 func TestResponsesNonStreamRetriesThinkingOnlyOutput(t *testing.T) {
 	ds := &streamStatusDSSeqStub{resps: []*http.Response{
-		makeOpenAISSEHTTPResponse(`data: {"response_message_id":88,"p":"response/thinking_content","v":"plan"}`, "data: [DONE]"),
-		makeOpenAISSEHTTPResponse(`data: {"p":"response/content","v":"visible"}`, "data: [DONE]"),
+		makeOpenAISSEHTTPResponse(
+			`data: {"choices":[{"index":0,"delta":{"content":"plan","type":"think"}}]}`,
+			`data: {"req_message_pk_id": 88}`,
+			"data: DONE"),
+		makeOpenAISSEHTTPResponse(`data: {"choices":[{"index":0,"delta":{"content":"visible","type":"text"}}]}`, "data: DONE"),
 	}}
 	h := &openAITestSurface{
 		Store: mockOpenAIConfig{},
@@ -517,9 +495,9 @@ func TestResponsesNonStreamRetriesThinkingOnlyOutput(t *testing.T) {
 	if len(ds.payloads) != 2 {
 		t.Fatalf("expected one synthetic retry call, got %d", len(ds.payloads))
 	}
-	// Verify multi-turn chaining.
-	if parentID, ok := ds.payloads[1]["parent_message_id"].(int); !ok || parentID != 88 {
-		t.Fatalf("expected retry parent_message_id=88, got %#v", ds.payloads[1]["parent_message_id"])
+	// SDAI fresh retry：content 后缀，无 parent_message_id。
+	if content, _ := ds.payloads[1]["content"].(string); !strings.Contains(content, "Previous reply had no visible output") {
+		t.Fatalf("expected retry suffix in content, got %q", content)
 	}
 	var out map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
@@ -556,7 +534,7 @@ func TestResponsesNonStreamUsageIgnoresPromptAndOutputTokenUsage(t *testing.T) {
 		Store: mockOpenAIConfig{},
 		Auth:  streamStatusAuthStub{},
 		DS: streamStatusDSStub{resp: makeOpenAISSEHTTPResponse(
-			`data: {"p":"response/content","v":"ok"}`,
+			`data: {"choices":[{"index":0,"delta":{"content":"ok","type":"text"}}]}`,
 			`data: {"p":"response","o":"BATCH","v":[{"p":"token_usage","v":{"prompt_tokens":11,"completion_tokens":29}},{"p":"quasi_status","v":"FINISHED"}]}`,
 		)},
 	}

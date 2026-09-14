@@ -60,7 +60,7 @@ func TestChatCompletionsNonStreamPersistsHistory(t *testing.T) {
 	h := &Handler{
 		Store:       mockOpenAIConfig{},
 		Auth:        streamStatusAuthStub{},
-		DS:          streamStatusDSStub{resp: makeOpenAISSEHTTPResponse(`data: {"p":"response/content","v":"hello world"}`, `data: [DONE]`)},
+		DS:          streamStatusDSStub{resp: makeOpenAISSEHTTPResponse(`data: {"choices":[{"index":0,"delta":{"content":"hello world","type":"text"}}]}`, `data: DONE`)},
 		ChatHistory: historyStore,
 	}
 
@@ -124,7 +124,7 @@ func TestChatHistoryNonStreamArchivesRawToolCallMarkup(t *testing.T) {
 
 	h := &Handler{}
 	rec := httptest.NewRecorder()
-	resp := makeOpenAISSEHTTPResponse(`data: {"p":"response/content","v":`+strconv.Quote(rawToolCall)+`}`, `data: [DONE]`)
+	resp := makeOpenAISSEHTTPResponse(`data: {"choices":[{"index":0,"delta":{"content":`+strconv.Quote(rawToolCall)+`,"type":"text"}}]}`, `data: DONE`)
 	h.handleNonStream(rec, resp, "cid-tool-history", "deepseek-v4-flash", "prompt", 0, false, false, []string{"search"}, nil, session)
 
 	if rec.Code != http.StatusOK {
@@ -165,7 +165,7 @@ func TestChatHistoryStreamArchivesRawToolCallMarkup(t *testing.T) {
 	h := &Handler{}
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	rec := httptest.NewRecorder()
-	resp := makeOpenAISSEHTTPResponse(`data: {"p":"response/content","v":`+strconv.Quote(rawToolCall)+`}`, `data: [DONE]`)
+	resp := makeOpenAISSEHTTPResponse(`data: {"choices":[{"index":0,"delta":{"content":`+strconv.Quote(rawToolCall)+`,"type":"text"}}]}`, `data: DONE`)
 	h.handleStream(rec, req, resp, "cid-stream-tool-history", "deepseek-v4-flash", "prompt", 0, false, false, []string{"search"}, nil, session)
 
 	if rec.Code != http.StatusOK {
@@ -274,7 +274,7 @@ func TestHandleStreamContextCancelledMarksHistoryStopped(t *testing.T) {
 	h := &Handler{}
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
-	resp := makeOpenAISSEHTTPResponse(`data: {"p":"response/content","v":"hello"}`, `data: [DONE]`)
+	resp := makeOpenAISSEHTTPResponse(`data: {"choices":[{"index":0,"delta":{"content":"hello","type":"text"}}]}`, `data: DONE`)
 
 	h.handleStream(rec, req, resp, "cid-stop", "deepseek-v4-flash", "prompt", 0, false, false, nil, nil, session)
 
@@ -299,7 +299,7 @@ func TestChatCompletionsRecordsAdminWebUISource(t *testing.T) {
 	h := &Handler{
 		Store:       mockOpenAIConfig{},
 		Auth:        streamStatusAuthStub{},
-		DS:          streamStatusDSStub{resp: makeOpenAISSEHTTPResponse(`data: {"p":"response/content","v":"hello world"}`, `data: [DONE]`)},
+		DS:          streamStatusDSStub{resp: makeOpenAISSEHTTPResponse(`data: {"choices":[{"index":0,"delta":{"content":"hello world","type":"text"}}]}`, `data: DONE`)},
 		ChatHistory: historyStore,
 	}
 
@@ -331,7 +331,7 @@ func TestChatCompletionsSkipsHistoryWhenDisabled(t *testing.T) {
 	h := &Handler{
 		Store:       mockOpenAIConfig{},
 		Auth:        streamStatusAuthStub{},
-		DS:          streamStatusDSStub{resp: makeOpenAISSEHTTPResponse(`data: {"p":"response/content","v":"hello world"}`, `data: [DONE]`)},
+		DS:          streamStatusDSStub{resp: makeOpenAISSEHTTPResponse(`data: {"choices":[{"index":0,"delta":{"content":"hello world","type":"text"}}]}`, `data: DONE`)},
 		ChatHistory: historyStore,
 	}
 
@@ -354,9 +354,13 @@ func TestChatCompletionsSkipsHistoryWhenDisabled(t *testing.T) {
 	}
 }
 
-func TestChatCompletionsCurrentInputFilePersistsNeutralPrompt(t *testing.T) {
+func TestChatCompletionsCurrentInputFileNoopPersistsOriginalMessages(t *testing.T) {
+	// SDAI：current_input_file 短路，历史按原始消息归档。
 	historyStore := newTestChatHistoryStore(t)
-	ds := &inlineUploadDSStub{}
+	ds := &streamStatusDSStub{resp: makeOpenAISSEHTTPResponse(
+		`data: {"choices":[{"index":0,"delta":{"content":"ok","type":"text"}}]}`,
+		`data: DONE`,
+	)}
 	h := &Handler{
 		Store: mockOpenAIConfig{
 			currentInputEnabled: true,
@@ -388,19 +392,11 @@ func TestChatCompletionsCurrentInputFilePersistsNeutralPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected detail item, got %v", err)
 	}
-	if len(ds.uploadCalls) != 1 {
-		t.Fatalf("expected current input upload to happen, got %d", len(ds.uploadCalls))
+	// 无文件上传，全量消息透传给上游并被归档。
+	if len(full.Messages) <= 1 {
+		t.Fatalf("expected original multi-turn messages to be persisted, got %#v", full.Messages)
 	}
-	if ds.uploadCalls[0].Filename != "DS2API_HISTORY.txt" {
-		t.Fatalf("expected DS2API_HISTORY.txt upload, got %q", ds.uploadCalls[0].Filename)
-	}
-	if full.HistoryText != string(ds.uploadCalls[0].Data) {
-		t.Fatalf("expected uploaded current input file to be persisted in history text")
-	}
-	if len(full.Messages) != 1 {
-		t.Fatalf("expected continuation prompt to be the only persisted message, got %#v", full.Messages)
-	}
-	if !strings.Contains(full.Messages[0].Content, "Continue from the latest state in the attached DS2API_HISTORY.txt context.") {
-		t.Fatalf("expected continuation prompt to be persisted, got %#v", full.Messages[0])
+	if !strings.Contains(full.UserInput, "latest user turn") {
+		t.Fatalf("expected latest user turn as input, got %q", full.UserInput)
 	}
 }

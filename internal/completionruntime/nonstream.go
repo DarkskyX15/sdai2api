@@ -19,9 +19,7 @@ import (
 
 type DeepSeekCaller interface {
 	CreateSession(ctx context.Context, a *auth.RequestAuth, maxAttempts int) (string, error)
-	GetPow(ctx context.Context, a *auth.RequestAuth, maxAttempts int) (string, error)
-	UploadFile(ctx context.Context, a *auth.RequestAuth, req dsclient.UploadFileRequest, maxAttempts int) (*dsclient.UploadFileResult, error)
-	CallCompletion(ctx context.Context, a *auth.RequestAuth, payload map[string]any, powResp string, maxAttempts int) (*http.Response, error)
+	CallCompletion(ctx context.Context, a *auth.RequestAuth, payload map[string]any, maxAttempts int) (*http.Response, error)
 }
 
 type Options struct {
@@ -42,7 +40,6 @@ type NonStreamResult struct {
 type StartResult struct {
 	SessionID string
 	Payload   map[string]any
-	Pow       string
 	Response  *http.Response
 	Request   promptcompat.StandardRequest
 }
@@ -61,23 +58,32 @@ func StartCompletion(ctx context.Context, ds DeepSeekCaller, a *auth.RequestAuth
 	if err != nil {
 		return StartResult{Request: stdReq}, authOutputError(a)
 	}
-	pow, err := ds.GetPow(ctx, a, maxAttempts)
-	if err != nil {
-		return StartResult{SessionID: sessionID, Request: stdReq}, &assistantturn.OutputError{Status: http.StatusUnauthorized, Message: "Failed to get PoW (invalid token or unknown error).", Code: "error"}
-	}
 	payload := stdReq.CompletionPayload(sessionID)
-	resp, err := ds.CallCompletion(ctx, a, payload, pow, maxAttempts)
+	resp, err := ds.CallCompletion(ctx, a, payload, maxAttempts)
 	if err != nil {
-		return StartResult{SessionID: sessionID, Payload: payload, Pow: pow, Request: stdReq}, &assistantturn.OutputError{Status: http.StatusInternalServerError, Message: "Failed to get completion.", Code: "error"}
+		return StartResult{SessionID: sessionID, Payload: payload, Request: stdReq}, completionCallError(err, a)
 	}
-	return StartResult{SessionID: sessionID, Payload: payload, Pow: pow, Response: resp, Request: stdReq}, nil
+	return StartResult{SessionID: sessionID, Payload: payload, Response: resp, Request: stdReq}, nil
+}
+
+// completionCallError 将 CallCompletion 失败转换为对外错误：
+// token 失效类失败（managed/direct unauthorized）返回 401，其余返回 500。
+func completionCallError(err error, a *auth.RequestAuth) *assistantturn.OutputError {
+	if dsclient.IsManagedUnauthorizedError(err) {
+		return &assistantturn.OutputError{Status: http.StatusUnauthorized, Message: "Account token is invalid. Please update the account token in admin.", Code: "error"}
+	}
+	if dsclient.IsDirectUnauthorizedError(err) {
+		return &assistantturn.OutputError{Status: http.StatusUnauthorized, Message: "Invalid token. If this should be a DS2API key, add it to config.keys first.", Code: "error"}
+	}
+	_ = a
+	return &assistantturn.OutputError{Status: http.StatusInternalServerError, Message: "Failed to get completion.", Code: "error"}
 }
 
 func prepareCurrentInputFile(ctx context.Context, ds DeepSeekCaller, a *auth.RequestAuth, stdReq promptcompat.StandardRequest, opts Options) (promptcompat.StandardRequest, *assistantturn.OutputError) {
 	if opts.CurrentInputFile == nil || stdReq.CurrentInputFileApplied {
 		return stdReq, nil
 	}
-	out, err := (history.Service{Store: opts.CurrentInputFile, DS: ds}).ApplyCurrentInputFile(ctx, a, stdReq)
+	out, err := (history.Service{Store: opts.CurrentInputFile}).ApplyCurrentInputFile(ctx, a, stdReq)
 	if err != nil {
 		status, message := history.MapError(err)
 		return out, &assistantturn.OutputError{Status: status, Message: message, Code: "error"}
@@ -101,7 +107,6 @@ func ExecuteNonStreamStartedWithRetry(ctx context.Context, ds DeepSeekCaller, a 
 	}
 	sessionID := start.SessionID
 	payload := start.Payload
-	pow := start.Pow
 
 	attempts := 0
 	accountSwitchAttempted := false
@@ -122,7 +127,6 @@ func ExecuteNonStreamStartedWithRetry(ctx context.Context, ds DeepSeekCaller, a 
 					config.Logger.Info("[completion_runtime_account_switch_retry] retrying after 429", "surface", stdReq.Surface, "stream", false, "account", a.AccountID)
 					sessionID = switched.SessionID
 					payload = switched.Payload
-					pow = switched.Pow
 					currentResp = switched.Response
 					usagePrompt = stdReq.PromptTokenText
 					accumulatedThinking = ""
@@ -162,7 +166,6 @@ func ExecuteNonStreamStartedWithRetry(ctx context.Context, ds DeepSeekCaller, a 
 					config.Logger.Info("[completion_runtime_account_switch_retry] retrying after 429", "surface", stdReq.Surface, "stream", false, "account", a.AccountID)
 					sessionID = switched.SessionID
 					payload = switched.Payload
-					pow = switched.Pow
 					currentResp = switched.Response
 					usagePrompt = stdReq.PromptTokenText
 					accumulatedThinking = ""
@@ -175,16 +178,12 @@ func ExecuteNonStreamStartedWithRetry(ctx context.Context, ds DeepSeekCaller, a 
 		}
 
 		attempts++
-		config.Logger.Info("[completion_runtime_empty_retry] attempting synthetic retry", "surface", stdReq.Surface, "stream", false, "retry_attempt", attempts, "parent_message_id", turn.ResponseMessageID)
-		retryPow, powErr := ds.GetPow(ctx, a, maxAttempts)
-		if powErr != nil {
-			config.Logger.Warn("[completion_runtime_empty_retry] retry PoW fetch failed, falling back to original PoW", "surface", stdReq.Surface, "retry_attempt", attempts, "error", powErr)
-			retryPow = pow
-		}
-		retryPayload := shared.ClonePayloadForEmptyOutputRetry(payload, turn.ResponseMessageID)
-		nextResp, err := ds.CallCompletion(ctx, a, retryPayload, retryPow, maxAttempts)
+		config.Logger.Info("[completion_runtime_empty_retry] attempting synthetic retry", "surface", stdReq.Surface, "stream", false, "retry_attempt", attempts)
+		// SDAI 无 parent_message_id 语义：fresh retry 使用全新 uuid + 原始归一化上下文。
+		retryPayload := shared.ClonePayloadForEmptyOutputRetry(payload, 0)
+		nextResp, err := ds.CallCompletion(ctx, a, retryPayload, maxAttempts)
 		if err != nil {
-			return NonStreamResult{SessionID: sessionID, Payload: payload, Turn: turn, Attempts: attempts}, &assistantturn.OutputError{Status: http.StatusInternalServerError, Message: "Failed to get completion.", Code: "error"}
+			return NonStreamResult{SessionID: sessionID, Payload: payload, Turn: turn, Attempts: attempts}, completionCallError(err, a)
 		}
 		usagePrompt = shared.UsagePromptWithEmptyOutputRetry(usagePrompt, attempts)
 		currentResp = nextResp
@@ -206,37 +205,16 @@ func canRetryOnAlternateAccount(ctx context.Context, a *auth.RequestAuth, outErr
 }
 
 func startStandardCompletionOnAlternateAccount(ctx context.Context, ds DeepSeekCaller, a *auth.RequestAuth, stdReq promptcompat.StandardRequest, opts Options, maxAttempts int) (StartResult, *assistantturn.OutputError) {
-	var prepErr *assistantturn.OutputError
-	stdReq, prepErr = reuploadCurrentInputFileForAccount(ctx, ds, a, stdReq, opts)
-	if prepErr != nil {
-		return StartResult{Request: stdReq}, prepErr
-	}
 	sessionID, err := ds.CreateSession(ctx, a, maxAttempts)
 	if err != nil {
 		return StartResult{}, authOutputError(a)
 	}
-	pow, err := ds.GetPow(ctx, a, maxAttempts)
-	if err != nil {
-		return StartResult{SessionID: sessionID}, &assistantturn.OutputError{Status: http.StatusUnauthorized, Message: "Failed to get PoW (invalid token or unknown error).", Code: "error"}
-	}
 	payload := stdReq.CompletionPayload(sessionID)
-	resp, err := ds.CallCompletion(ctx, a, payload, pow, maxAttempts)
+	resp, err := ds.CallCompletion(ctx, a, payload, maxAttempts)
 	if err != nil {
-		return StartResult{SessionID: sessionID, Payload: payload, Pow: pow}, &assistantturn.OutputError{Status: http.StatusInternalServerError, Message: "Failed to get completion.", Code: "error"}
+		return StartResult{SessionID: sessionID, Payload: payload}, completionCallError(err, a)
 	}
-	return StartResult{SessionID: sessionID, Payload: payload, Pow: pow, Response: resp, Request: stdReq}, nil
-}
-
-func reuploadCurrentInputFileForAccount(ctx context.Context, ds DeepSeekCaller, a *auth.RequestAuth, stdReq promptcompat.StandardRequest, opts Options) (promptcompat.StandardRequest, *assistantturn.OutputError) {
-	if opts.CurrentInputFile == nil || !stdReq.CurrentInputFileApplied {
-		return stdReq, nil
-	}
-	out, err := (history.Service{Store: opts.CurrentInputFile, DS: ds}).ReuploadAppliedCurrentInputFile(ctx, a, stdReq)
-	if err != nil {
-		status, message := history.MapError(err)
-		return out, &assistantturn.OutputError{Status: status, Message: message, Code: "error"}
-	}
-	return out, nil
+	return StartResult{SessionID: sessionID, Payload: payload, Response: resp, Request: stdReq}, nil
 }
 
 func collectAttempt(resp *http.Response, stdReq promptcompat.StandardRequest, usagePrompt string, opts Options) (assistantturn.Turn, *assistantturn.OutputError) {

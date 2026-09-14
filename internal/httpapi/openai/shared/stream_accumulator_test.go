@@ -75,25 +75,9 @@ func TestStreamAccumulatorKeepsHiddenThinkingForToolDetection(t *testing.T) {
 	}
 }
 
-func TestStreamAccumulatorSuppressesCitationTextWhenSearchEnabled(t *testing.T) {
-	acc := StreamAccumulator{SearchEnabled: true, StripReferenceMarkers: true}
-	result := acc.Apply(sse.LineResult{
-		Parsed: true,
-		Parts:  []sse.ContentPart{{Type: "text", Text: "[citation:1]"}},
-	})
-
-	if !result.ContentSeen {
-		t.Fatalf("expected citation chunk to mark upstream content")
-	}
-	if len(result.Parts) != 1 || !result.Parts[0].CitationOnly {
-		t.Fatalf("expected citation-only delta, got %#v", result.Parts)
-	}
-	if got := acc.RawText.String(); got != "[citation:1]" {
-		t.Fatalf("raw text = %q", got)
-	}
-	if got := acc.Text.String(); got != "" {
-		t.Fatalf("visible text = %q", got)
-	}
+func TestStreamAccumulatorCitationSuppressionRemoved(t *testing.T) {
+	// SDAI 无联网搜索/引用标记，citation-only 判定已移除。
+	t.Skip("citation metadata is not an SDAI upstream signal")
 }
 
 func TestStreamAccumulatorStripsInlineCitationAndReferenceMarkers(t *testing.T) {

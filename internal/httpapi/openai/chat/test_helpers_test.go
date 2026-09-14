@@ -2,7 +2,6 @@ package chat
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -91,15 +90,7 @@ func (m streamStatusDSStub) CreateSession(_ context.Context, _ *auth.RequestAuth
 	return "session-id", nil
 }
 
-func (m streamStatusDSStub) GetPow(_ context.Context, _ *auth.RequestAuth, _ int) (string, error) {
-	return "pow", nil
-}
-
-func (m streamStatusDSStub) UploadFile(_ context.Context, _ *auth.RequestAuth, _ dsclient.UploadFileRequest, _ int) (*dsclient.UploadFileResult, error) {
-	return &dsclient.UploadFileResult{ID: "file-id", Filename: "file.txt", Bytes: 1, Status: "uploaded"}, nil
-}
-
-func (m streamStatusDSStub) CallCompletion(_ context.Context, _ *auth.RequestAuth, _ map[string]any, _ string, _ int) (*http.Response, error) {
+func (m streamStatusDSStub) CallCompletion(_ context.Context, _ *auth.RequestAuth, _ map[string]any, _ int) (*http.Response, error) {
 	return m.resp, nil
 }
 
@@ -121,64 +112,6 @@ func makeOpenAISSEHTTPResponse(lines ...string) *http.Response {
 		Header:     make(http.Header),
 		Body:       io.NopCloser(strings.NewReader(body)),
 	}
-}
-
-type inlineUploadDSStub struct {
-	uploadCalls    []dsclient.UploadFileRequest
-	lastCtx        context.Context
-	completionReq  map[string]any
-	createSession  string
-	uploadErr      error
-	completionResp *http.Response
-}
-
-func (m *inlineUploadDSStub) CreateSession(_ context.Context, _ *auth.RequestAuth, _ int) (string, error) {
-	if strings.TrimSpace(m.createSession) == "" {
-		return "session-id", nil
-	}
-	return m.createSession, nil
-}
-
-func (m *inlineUploadDSStub) GetPow(_ context.Context, _ *auth.RequestAuth, _ int) (string, error) {
-	return "pow", nil
-}
-
-func (m *inlineUploadDSStub) UploadFile(ctx context.Context, _ *auth.RequestAuth, req dsclient.UploadFileRequest, _ int) (*dsclient.UploadFileResult, error) {
-	m.lastCtx = ctx
-	m.uploadCalls = append(m.uploadCalls, req)
-	if m.uploadErr != nil {
-		return nil, m.uploadErr
-	}
-	id := "file-inline-1"
-	if len(m.uploadCalls) > 1 {
-		id = "file-inline-" + fmt.Sprint(len(m.uploadCalls))
-	}
-	return &dsclient.UploadFileResult{
-		ID:       id,
-		Filename: req.Filename,
-		Bytes:    int64(len(req.Data)),
-		Status:   "uploaded",
-		Purpose:  req.Purpose,
-	}, nil
-}
-
-func (m *inlineUploadDSStub) CallCompletion(_ context.Context, _ *auth.RequestAuth, payload map[string]any, _ string, _ int) (*http.Response, error) {
-	m.completionReq = payload
-	if m.completionResp != nil {
-		return m.completionResp, nil
-	}
-	return makeOpenAISSEHTTPResponse(
-		`data: {"p":"response/content","v":"ok"}`,
-		`data: [DONE]`,
-	), nil
-}
-
-func (m *inlineUploadDSStub) DeleteSessionForToken(_ context.Context, _ string, _ string) (*dsclient.DeleteSessionResult, error) {
-	return &dsclient.DeleteSessionResult{Success: true}, nil
-}
-
-func (m *inlineUploadDSStub) DeleteAllSessionsForToken(_ context.Context, _ string) error {
-	return nil
 }
 
 func historySplitTestMessages() []any {

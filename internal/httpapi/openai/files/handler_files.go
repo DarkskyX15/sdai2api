@@ -1,23 +1,14 @@
 package files
 
 import (
-	"context"
-	"errors"
-	"io"
 	"net/http"
-	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"ds2api/internal/auth"
 	"ds2api/internal/chathistory"
-	"ds2api/internal/config"
-	dsclient "ds2api/internal/deepseek/client"
 	"ds2api/internal/httpapi/openai/shared"
 )
-
-const openAIUploadMaxMemory = 32 << 20
 
 type Handler struct {
 	Store       shared.ConfigReader
@@ -26,10 +17,8 @@ type Handler struct {
 	ChatHistory *chathistory.Store
 }
 
-type fileFetcher interface {
-	FetchUploadedFile(ctx context.Context, a *auth.RequestAuth, fileID string) (*dsclient.UploadFileResult, error)
-}
-
+// UploadFile SDAI 上游没有文件上传端点，OpenAI /v1/files 上传恒返回 501。
+// 长上下文请直接放入 messages（受上游 content ≈65535 bytes 限制，见 client 层预校验）。
 func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	a, err := h.Auth.Determine(r)
 	if err != nil {
@@ -42,57 +31,11 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer h.Auth.Release(a)
-	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type"))), "multipart/form-data") {
-		shared.WriteOpenAIError(w, http.StatusBadRequest, "content-type must be multipart/form-data")
-		return
-	}
-	// Enforce a hard cap on the total request body size to prevent OOM
-	r.Body = http.MaxBytesReader(w, r.Body, shared.UploadMaxSize)
-	if err := r.ParseMultipartForm(openAIUploadMaxMemory); err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "too large") {
-			shared.WriteOpenAIError(w, http.StatusRequestEntityTooLarge, "file size exceeds limit")
-			return
-		}
-		shared.WriteOpenAIError(w, http.StatusBadRequest, "invalid multipart form")
-		return
-	}
-	if r.MultipartForm != nil {
-		defer func() { _ = r.MultipartForm.RemoveAll() }()
-	}
-	r = r.WithContext(auth.WithAuth(r.Context(), a))
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		shared.WriteOpenAIError(w, http.StatusBadRequest, "file is required")
-		return
-	}
-	defer func() { _ = file.Close() }()
-	data, err := io.ReadAll(file)
-	if err != nil {
-		shared.WriteOpenAIError(w, http.StatusBadRequest, "failed to read uploaded file")
-		return
-	}
-	contentType := strings.TrimSpace(header.Header.Get("Content-Type"))
-	if contentType == "" && len(data) > 0 {
-		contentType = http.DetectContentType(data)
-	}
-	modelType := resolveUploadModelType(h.Store, r)
-	result, err := h.DS.UploadFile(r.Context(), a, dsclient.UploadFileRequest{
-		Filename:    header.Filename,
-		ContentType: contentType,
-		Purpose:     strings.TrimSpace(r.FormValue("purpose")),
-		ModelType:   modelType,
-		Data:        data,
-	}, 3)
-	if err != nil {
-		shared.WriteOpenAIError(w, http.StatusInternalServerError, "Failed to upload file.")
-		return
-	}
-	if result != nil && result.AccountID == "" {
-		result.AccountID = a.AccountID
-	}
-	shared.WriteJSON(w, http.StatusOK, buildOpenAIFileObject(result))
+	shared.WriteOpenAIError(w, http.StatusNotImplemented,
+		"file upload is not available with the SDAI upstream (no upload endpoint)")
 }
 
+// RetrieveFile SDAI 上游没有文件查询端点，恒返回 501。
 func (h *Handler) RetrieveFile(w http.ResponseWriter, r *http.Request) {
 	a, err := h.Auth.Determine(r)
 	if err != nil {
@@ -105,84 +48,7 @@ func (h *Handler) RetrieveFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer h.Auth.Release(a)
-
-	fileID := strings.TrimSpace(chi.URLParam(r, "file_id"))
-	if fileID == "" {
-		shared.WriteOpenAIError(w, http.StatusBadRequest, "file_id is required")
-		return
-	}
-	fetcher, ok := h.DS.(fileFetcher)
-	if !ok {
-		shared.WriteOpenAIError(w, http.StatusNotImplemented, "file retrieval is not available")
-		return
-	}
-	result, err := fetcher.FetchUploadedFile(r.Context(), a, fileID)
-	if err != nil {
-		if errors.Is(err, dsclient.ErrUploadFileNotFound) {
-			shared.WriteOpenAIError(w, http.StatusNotFound, "file not found")
-			return
-		}
-		shared.WriteOpenAIError(w, http.StatusInternalServerError, "Failed to retrieve file.")
-		return
-	}
-	if result != nil && result.AccountID == "" {
-		result.AccountID = a.AccountID
-	}
-	shared.WriteJSON(w, http.StatusOK, buildOpenAIFileObject(result))
-}
-
-func resolveUploadModelType(store shared.ConfigReader, r *http.Request) string {
-	for _, candidate := range []string{r.FormValue("model_type"), r.Header.Get("X-Model-Type")} {
-		if modelType := normalizeUploadModelType(candidate); modelType != "" {
-			return modelType
-		}
-	}
-	requestedModel := strings.TrimSpace(r.FormValue("model"))
-	if requestedModel != "" {
-		if resolvedModel, ok := config.ResolveModel(store, requestedModel); ok {
-			if modelType, ok := config.GetModelType(resolvedModel); ok {
-				return modelType
-			}
-		}
-	}
-	return "default"
-}
-
-func normalizeUploadModelType(raw string) string {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "default", "expert", "vision":
-		return strings.ToLower(strings.TrimSpace(raw))
-	default:
-		return ""
-	}
-}
-
-func buildOpenAIFileObject(result *dsclient.UploadFileResult) map[string]any {
-	if result == nil {
-		obj := map[string]any{
-			"id":             "",
-			"object":         "file",
-			"bytes":          0,
-			"created_at":     time.Now().Unix(),
-			"filename":       "",
-			"purpose":        "",
-			"status":         "uploaded",
-			"status_details": nil,
-		}
-		return obj
-	}
-	obj := map[string]any{
-		"id":             result.ID,
-		"object":         "file",
-		"bytes":          result.Bytes,
-		"created_at":     time.Now().Unix(),
-		"filename":       result.Filename,
-		"purpose":        result.Purpose,
-		"status":         result.Status,
-		"status_details": nil,
-	}
-	if result.AccountID != "" {
-		obj["account_id"] = result.AccountID
-	}
-	return obj
+	_ = chi.URLParam(r, "file_id")
+	shared.WriteOpenAIError(w, http.StatusNotImplemented,
+		"file retrieval is not available with the SDAI upstream")
 }

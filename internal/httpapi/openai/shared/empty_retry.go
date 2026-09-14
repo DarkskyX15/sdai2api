@@ -16,20 +16,16 @@ func ClonePayloadWithEmptyOutputRetryPrompt(payload map[string]any) map[string]a
 	return ClonePayloadForEmptyOutputRetry(payload, 0)
 }
 
-// ClonePayloadForEmptyOutputRetry creates a retry payload with the suffix
-// appended and, if parentMessageID > 0, sets parent_message_id so the
-// retry is submitted as a proper follow-up turn in the same DeepSeek
-// session rather than a disconnected root message.
+// ClonePayloadForEmptyOutputRetry creates a retry payload with the retry
+// suffix appended to the upstream content field. parentMessageID 保留参数以
+// 兼容旧调用点，但 SDAI 无 parent_message_id 语义，恒不写入。
 func ClonePayloadForEmptyOutputRetry(payload map[string]any, parentMessageID int) map[string]any {
 	clone := make(map[string]any, len(payload))
 	for k, v := range payload {
 		clone[k] = v
 	}
-	original, _ := payload["prompt"].(string)
-	clone["prompt"] = AppendEmptyOutputRetrySuffix(original)
-	if parentMessageID > 0 {
-		clone["parent_message_id"] = parentMessageID
-	}
+	original, _ := payload["content"].(string)
+	clone["content"] = AppendEmptyOutputRetrySuffix(original)
 	return clone
 }
 

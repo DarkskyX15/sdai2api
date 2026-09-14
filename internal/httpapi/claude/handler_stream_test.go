@@ -31,8 +31,10 @@ func makeClaudeSSEHTTPResponse(lines ...string) *http.Response {
 func makeClaudeContentLine(t *testing.T, text string) string {
 	t.Helper()
 	line, err := json.Marshal(map[string]any{
-		"p": "response/content",
-		"v": text,
+		"choices": []any{map[string]any{
+			"index": 0,
+			"delta": map[string]any{"content": text, "type": "text"},
+		}},
 	})
 	if err != nil {
 		t.Fatalf("marshal content line failed: %v", err)
@@ -97,9 +99,9 @@ func collectClaudeTextDeltas(frames []claudeFrame) string {
 func TestHandleClaudeStreamRealtimeTextIncrementsWithEventHeaders(t *testing.T) {
 	h := &Handler{}
 	resp := makeClaudeSSEHTTPResponse(
-		`data: {"p":"response/content","v":"Hel"}`,
-		`data: {"p":"response/content","v":"lo"}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"Hel","type":"text"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"lo","type":"text"}}]}`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
@@ -141,7 +143,7 @@ func TestHandleClaudeStreamRealtimeToolBufferedPlainTextDoesNotRepeatFinalText(t
 		makeClaudeContentLine(t, "明"),
 		makeClaudeContentLine(t, "白\n\nBash\nIN\npwd\n"),
 		makeClaudeContentLine(t, "OUT\nok"),
-		`data: [DONE]`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
@@ -158,9 +160,9 @@ func TestHandleClaudeStreamRealtimeTrimsContinuationReplay(t *testing.T) {
 	h := &Handler{}
 	prefix := strings.Repeat("A", 40)
 	resp := makeClaudeSSEHTTPResponse(
-		`data: {"p":"response/content","v":"`+prefix+`"}`,
-		`data: {"p":"response/content","v":"`+prefix+` tail"}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"`+prefix+`","type":"text"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"`+prefix+` tail","type":"text"}}]}`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
@@ -183,10 +185,10 @@ func TestHandleClaudeStreamRealtimeTrimsContinuationReplay(t *testing.T) {
 func TestHandleClaudeStreamRealtimeThinkingDelta(t *testing.T) {
 	h := &Handler{}
 	resp := makeClaudeSSEHTTPResponse(
-		`data: {"p":"response/thinking_content","v":"思"}`,
-		`data: {"p":"response/thinking_content","v":"考"}`,
-		`data: {"p":"response/content","v":"ok"}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"思","type":"think"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"考","type":"think"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"ok","type":"text"}}]}`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
@@ -210,10 +212,10 @@ func TestHandleClaudeStreamRealtimeThinkingDelta(t *testing.T) {
 func TestHandleClaudeStreamRealtimeSkipsThinkingFallbackWhenFinalTextExists(t *testing.T) {
 	h := &Handler{}
 	resp := makeClaudeSSEHTTPResponse(
-		`data: {"p":"response/thinking_content","v":"{\"tool_calls\":[{\"name\":\"search\""}`,
-		`data: {"p":"response/thinking_content","v":",\"input\":{\"q\":\"go\"}}]}"}`,
-		`data: {"p":"response/content","v":"normal answer"}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"{\"tool_calls\":[{\"name\":\"search\"","type":"think"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":",\"input\":{\"q\":\"go\"}}]}","type":"think"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"normal answer","type":"text"}}]}`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
@@ -280,7 +282,7 @@ func TestHandleClaudeStreamRealtimePingEvent(t *testing.T) {
 	go func() {
 		time.Sleep(40 * time.Millisecond)
 		_, _ = io.WriteString(pw, "data: {\"p\":\"response/content\",\"v\":\"hi\"}\n")
-		_, _ = io.WriteString(pw, "data: [DONE]\n")
+		_, _ = io.WriteString(pw, "data: DONE\n")
 		_ = pw.Close()
 	}()
 
@@ -296,9 +298,9 @@ func TestHandleClaudeStreamRealtimePingEvent(t *testing.T) {
 
 func TestCollectDeepSeekRegression(t *testing.T) {
 	resp := makeClaudeSSEHTTPResponse(
-		`data: {"p":"response/thinking_content","v":"想"}`,
-		`data: {"p":"response/content","v":"答"}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"想","type":"think"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"答","type":"text"}}]}`,
+		`data: DONE`,
 	)
 	result := sse.CollectStream(resp, true, true)
 	if result.Thinking != "想" {
@@ -334,8 +336,8 @@ func TestHandleClaudeStreamRealtimeToolSafetyAcrossStructuredFormats(t *testing.
 		t.Run(tc.name, func(t *testing.T) {
 			h := &Handler{}
 			resp := makeClaudeSSEHTTPResponse(
-				`data: {"p":"response/content","v":"`+strings.ReplaceAll(tc.payload, `"`, `\"`)+`"}`,
-				`data: [DONE]`,
+				`data: {"choices":[{"index":0,"delta":{"content":"`+strings.ReplaceAll(tc.payload, `"`, `\"`)+`","type":"text"}}]}`,
+				`data: DONE`,
 			)
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
@@ -362,8 +364,8 @@ func TestHandleClaudeStreamRealtimeDetectsToolUseWithLeadingProse(t *testing.T) 
 	h := &Handler{}
 	payload := "I'll call a tool now.\\n<tool_calls><invoke name=\\\"write_file\\\"><parameter name=\\\"path\\\">/tmp/a.txt</parameter><parameter name=\\\"content\\\">abc</parameter></invoke></tool_calls>"
 	resp := makeClaudeSSEHTTPResponse(
-		`data: {"p":"response/content","v":"`+payload+`"}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"`+payload+`","type":"text"}}]}`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
@@ -397,7 +399,7 @@ func TestHandleClaudeStreamRealtimeIgnoresUnclosedFencedToolExample(t *testing.T
 	resp := makeClaudeSSEHTTPResponse(
 		"data: {\"p\":\"response/content\",\"v\":\"Here is an example:\\n```json\\n{\\\"tool_calls\\\":[{\\\"name\\\":\\\"Bash\\\",\\\"input\\\":{\\\"command\\\":\\\"pwd\\\"}}]}\"}",
 		"data: {\"p\":\"response/content\",\"v\":\"\\n```\\nDo not execute it.\"}",
-		`data: [DONE]`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
@@ -438,8 +440,8 @@ func TestHandleClaudeStreamRealtimePromotesUnclosedFencedToolExample(t *testing.
 func TestHandleClaudeStreamRealtimeNormalizesToolInputBySchema(t *testing.T) {
 	h := &Handler{}
 	resp := makeClaudeSSEHTTPResponse(
-		`data: {"p":"response/content","v":"<tool_calls><invoke name=\"Write\">{\"input\":{\"content\":{\"message\":\"hi\"},\"taskId\":1}}</invoke></tool_calls>"}`,
-		`data: [DONE]`,
+		`data: {"choices":[{"index":0,"delta":{"content":"<tool_calls><invoke name=\"Write\">{\"input\":{\"content\":{\"message\":\"hi\"},\"taskId\":1}}</invoke></tool_calls>","type":"text"}}]}`,
+		`data: DONE`,
 	)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)

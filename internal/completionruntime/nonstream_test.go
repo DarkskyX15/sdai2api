@@ -2,6 +2,7 @@ package completionruntime
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -10,14 +11,12 @@ import (
 	"ds2api/internal/account"
 	"ds2api/internal/auth"
 	"ds2api/internal/config"
-	dsclient "ds2api/internal/deepseek/client"
 	"ds2api/internal/promptcompat"
 )
 
 type fakeDeepSeekCaller struct {
 	responses          []*http.Response
 	payloads           []map[string]any
-	uploads            []dsclient.UploadFileRequest
 	completionAccounts []string
 	sessionByAccount   bool
 }
@@ -34,35 +33,66 @@ func (f *fakeDeepSeekCaller) CreateSession(_ context.Context, a *auth.RequestAut
 	return "session-1", nil
 }
 
-func (f *fakeDeepSeekCaller) GetPow(context.Context, *auth.RequestAuth, int) (string, error) {
-	return "pow", nil
-}
-
-func (f *fakeDeepSeekCaller) UploadFile(_ context.Context, a *auth.RequestAuth, req dsclient.UploadFileRequest, _ int) (*dsclient.UploadFileResult, error) {
-	f.uploads = append(f.uploads, req)
-	if a != nil && a.AccountID != "" {
-		return &dsclient.UploadFileResult{ID: "file-runtime-" + a.AccountID}, nil
-	}
-	return &dsclient.UploadFileResult{ID: "file-runtime-1"}, nil
-}
-
-func (f *fakeDeepSeekCaller) CallCompletion(_ context.Context, a *auth.RequestAuth, payload map[string]any, _ string, _ int) (*http.Response, error) {
+func (f *fakeDeepSeekCaller) CallCompletion(_ context.Context, a *auth.RequestAuth, payload map[string]any, _ int) (*http.Response, error) {
 	f.payloads = append(f.payloads, payload)
 	if a != nil {
 		f.completionAccounts = append(f.completionAccounts, a.AccountID)
 	}
 	if len(f.responses) == 0 {
-		return sseHTTPResponse(http.StatusOK, `data: {"p":"response/content","v":"fallback"}`), nil
+		return sseHTTPResponse(http.StatusOK, sdaiTextDelta("fallback")), nil
 	}
 	resp := f.responses[0]
 	f.responses = f.responses[1:]
 	return resp, nil
 }
 
+// sdaiDeltaLine 构造一行 SDAI 增量（JSON 安全编码）。
+func sdaiDeltaLine(content, deltaType string) string {
+	line, err := json.Marshal(map[string]any{
+		"choices": []any{map[string]any{
+			"index": 0,
+			"delta": map[string]any{"content": content, "type": deltaType},
+		}},
+	})
+	if err != nil {
+		panic("test helper: marshal delta failed: " + err.Error())
+	}
+	return "data: " + string(line)
+}
+
+// sdaiTextDelta 构造一行 SDAI text 增量。
+func sdaiTextDelta(content string) string {
+	return sdaiDeltaLine(content, "text")
+}
+
+// sdaiThinkDelta 构造一行 SDAI think 增量（用于构造空输出场景）。
+func sdaiThinkDelta(content string) string {
+	return sdaiDeltaLine(content, "think")
+}
+
+// sdaiFinish 构造 SDAI finish 事件行。
+func sdaiFinish(id int) string {
+	return `data: {"req_message_pk_id": ` + intToString(id) + `}`
+}
+
+func intToString(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	digits := []byte{}
+	for n > 0 {
+		digits = append([]byte{byte('0' + n%10)}, digits...)
+		n /= 10
+	}
+	return string(digits)
+}
+
 func TestExecuteNonStreamWithRetryBuildsCanonicalTurn(t *testing.T) {
 	ds := &fakeDeepSeekCaller{responses: []*http.Response{sseHTTPResponse(
 		http.StatusOK,
-		`data: {"response_message_id":42,"p":"response/content","v":"<tool_calls><invoke name=\"Write\"><parameter name=\"content\">{\"x\":1}</parameter></invoke></tool_calls>"}`,
+		sdaiFinish(42),
+		sdaiTextDelta(`<tool_calls><invoke name="Write"><parameter name="content">{"x":1}</parameter></invoke></tool_calls>`),
+		"data: DONE",
 	)}}
 	stdReq := promptcompat.StandardRequest{
 		Surface:         "test",
@@ -102,32 +132,41 @@ func TestExecuteNonStreamWithRetryBuildsCanonicalTurn(t *testing.T) {
 	}
 }
 
-func TestExecuteNonStreamWithRetrySwitchesManagedAccountBeforeFinal429(t *testing.T) {
-	t.Setenv("DS2API_CONFIG_JSON", `{
+func sdaiTestAccountsConfig() string {
+	return `{
 		"keys":["managed-key"],
 		"accounts":[
-			{"email":"acc1@test.com","password":"pwd"},
-			{"email":"acc2@test.com","password":"pwd"}
+			{"email":"acc1@test.com","token":"token-acc1"},
+			{"email":"acc2@test.com","token":"token-acc2"}
 		]
-	}`)
+	}`
+}
+
+func sdaiManagedAuth(t *testing.T) *auth.RequestAuth {
+	t.Helper()
 	store := config.LoadStore()
-	resolver := auth.NewResolver(store, account.NewPool(store), func(_ context.Context, acc config.Account) (string, error) {
-		return "token-" + acc.Identifier(), nil
-	})
+	resolver := auth.NewResolver(store, account.NewPool(store))
 	req, _ := http.NewRequest(http.MethodPost, "/", nil)
 	req.Header.Set("Authorization", "Bearer managed-key")
 	a, err := resolver.Determine(req)
 	if err != nil {
 		t.Fatalf("determine failed: %v", err)
 	}
-	defer resolver.Release(a)
+	t.Cleanup(func() { resolver.Release(a) })
+	return a
+}
+
+func TestExecuteNonStreamWithRetrySwitchesManagedAccountBeforeFinal429(t *testing.T) {
+	isolateTestConfig(t)
+	t.Setenv("DS2API_CONFIG_JSON", sdaiTestAccountsConfig())
+	a := sdaiManagedAuth(t)
 
 	ds := &fakeDeepSeekCaller{
 		sessionByAccount: true,
 		responses: []*http.Response{
-			sseHTTPResponse(http.StatusOK, `data: {"response_message_id":11,"p":"response/thinking_content","v":"first empty"}`),
-			sseHTTPResponse(http.StatusOK, `data: {"response_message_id":12,"p":"response/thinking_content","v":"retry empty"}`),
-			sseHTTPResponse(http.StatusOK, `data: {"response_message_id":21,"p":"response/content","v":"ok from second account"}`),
+			sseHTTPResponse(http.StatusOK, sdaiFinish(11), sdaiThinkDelta("first empty"), "data: DONE"),
+			sseHTTPResponse(http.StatusOK, sdaiFinish(12), sdaiThinkDelta("retry empty"), "data: DONE"),
+			sseHTTPResponse(http.StatusOK, sdaiFinish(21), sdaiTextDelta("ok from second account"), "data: DONE"),
 		},
 	}
 	stdReq := promptcompat.StandardRequest{
@@ -148,138 +187,22 @@ func TestExecuteNonStreamWithRetrySwitchesManagedAccountBeforeFinal429(t *testin
 	if result.SessionID != "session-acc2@test.com" {
 		t.Fatalf("expected switched account session, got %q", result.SessionID)
 	}
-	wantAccounts := []string{"acc1@test.com", "acc1@test.com", "acc2@test.com"}
-	if len(ds.completionAccounts) != len(wantAccounts) {
-		t.Fatalf("completion account count mismatch: got %v want %v", ds.completionAccounts, wantAccounts)
+	if got := ds.payloads[2]["uuid"]; got != "session-acc2@test.com" {
+		t.Fatalf("switched payload uuid mismatch: %#v", got)
 	}
-	for i, want := range wantAccounts {
-		if ds.completionAccounts[i] != want {
-			t.Fatalf("completion account %d = %q want %q (all=%v)", i, ds.completionAccounts[i], want, ds.completionAccounts)
-		}
+	if content, _ := ds.payloads[2]["content"].(string); strings.Contains(content, "Previous reply had no visible output") {
+		t.Fatalf("expected fresh switched-account content without empty-output suffix, got %q", content)
 	}
-	if got := ds.payloads[2]["chat_session_id"]; got != "session-acc2@test.com" {
-		t.Fatalf("switched payload session mismatch: %#v", got)
-	}
-	if prompt, _ := ds.payloads[2]["prompt"].(string); strings.Contains(prompt, "Previous reply had no visible output") {
-		t.Fatalf("expected fresh switched-account prompt without empty-output suffix, got %q", prompt)
+	// SDAI 切号重试是 fresh retry：每次调用都带账号身份。
+	wantLastAccount := "acc2@test.com"
+	if got := ds.completionAccounts[len(ds.completionAccounts)-1]; got != wantLastAccount {
+		t.Fatalf("expected last completion on %q, got %q (all=%v)", wantLastAccount, got, ds.completionAccounts)
 	}
 }
 
-func TestExecuteNonStreamWithRetryReuploadsCurrentInputFileAfterAccountSwitch(t *testing.T) {
-	t.Setenv("DS2API_CONFIG_JSON", `{
-		"keys":["managed-key"],
-		"accounts":[
-			{"email":"acc1@test.com","password":"pwd"},
-			{"email":"acc2@test.com","password":"pwd"}
-		]
-	}`)
-	store := config.LoadStore()
-	resolver := auth.NewResolver(store, account.NewPool(store), func(_ context.Context, acc config.Account) (string, error) {
-		return "token-" + acc.Identifier(), nil
-	})
-	req, _ := http.NewRequest(http.MethodPost, "/", nil)
-	req.Header.Set("Authorization", "Bearer managed-key")
-	a, err := resolver.Determine(req)
-	if err != nil {
-		t.Fatalf("determine failed: %v", err)
-	}
-	defer resolver.Release(a)
-
-	ds := &fakeDeepSeekCaller{
-		sessionByAccount: true,
-		responses: []*http.Response{
-			sseHTTPResponse(http.StatusOK, `data: {"response_message_id":11,"p":"response/thinking_content","v":"first empty"}`),
-			sseHTTPResponse(http.StatusOK, `data: {"response_message_id":12,"p":"response/thinking_content","v":"retry empty"}`),
-			sseHTTPResponse(http.StatusOK, `data: {"response_message_id":21,"p":"response/content","v":"ok from second account"}`),
-		},
-	}
-	stdReq := promptcompat.StandardRequest{
-		Surface:        "test",
-		RequestedModel: "deepseek-v4-flash",
-		ResolvedModel:  "deepseek-v4-flash",
-		ResponseModel:  "deepseek-v4-flash",
-		Messages: []any{
-			map[string]any{"role": "user", "content": "large current input"},
-		},
-		PromptTokenText: "large current input",
-		FinalPrompt:     "large current input",
-		Thinking:        true,
-	}
-
-	result, outErr := ExecuteNonStreamWithRetry(context.Background(), ds, a, stdReq, Options{
-		RetryEnabled:     true,
-		CurrentInputFile: currentInputRuntimeConfig{},
-	})
-	if outErr != nil {
-		t.Fatalf("unexpected output error after account switch retry: %#v", outErr)
-	}
-	if result.Turn.Text != "ok from second account" {
-		t.Fatalf("text mismatch after switch retry: %q", result.Turn.Text)
-	}
-	if len(ds.uploads) != 2 {
-		t.Fatalf("expected current input file uploaded once per account, got %d", len(ds.uploads))
-	}
-	refIDs, _ := ds.payloads[2]["ref_file_ids"].([]any)
-	if len(refIDs) != 1 || refIDs[0] != "file-runtime-acc2@test.com" {
-		t.Fatalf("expected switched account ref_file_ids to use reuploaded file, got %#v", ds.payloads[2]["ref_file_ids"])
-	}
-}
-
-func TestExecuteNonStreamWithRetryUsesParentMessageForEmptyRetry(t *testing.T) {
-	ds := &fakeDeepSeekCaller{responses: []*http.Response{
-		sseHTTPResponse(http.StatusOK, `data: {"response_message_id":77,"p":"response/thinking_content","v":"plan"}`),
-		sseHTTPResponse(http.StatusOK, `data: {"response_message_id":78,"p":"response/content","v":"ok"}`),
-	}}
-	stdReq := promptcompat.StandardRequest{
-		Surface:         "test",
-		ResponseModel:   "deepseek-v4-flash",
-		PromptTokenText: "prompt",
-		FinalPrompt:     "final prompt",
-	}
-
-	result, outErr := ExecuteNonStreamWithRetry(context.Background(), ds, &auth.RequestAuth{}, stdReq, Options{RetryEnabled: true})
-	if outErr != nil {
-		t.Fatalf("unexpected output error: %#v", outErr)
-	}
-	if result.Attempts != 1 {
-		t.Fatalf("expected one retry, got %d", result.Attempts)
-	}
-	if len(ds.payloads) != 2 {
-		t.Fatalf("expected two completion calls, got %d", len(ds.payloads))
-	}
-	if got := ds.payloads[1]["parent_message_id"]; got != 77 {
-		t.Fatalf("retry parent_message_id mismatch: %#v", got)
-	}
-	if result.Turn.Text != "ok" {
-		t.Fatalf("retry text mismatch: %q", result.Turn.Text)
-	}
-}
-
-func TestExecuteNonStreamWithRetryConvertsReferenceMarkers(t *testing.T) {
-	ds := &fakeDeepSeekCaller{responses: []*http.Response{sseHTTPResponse(
-		http.StatusOK,
-		`data: {"p":"response/content","v":"答案[reference:0]。","citation":{"cite_index":0,"url":"https://example.com/ref"}}`,
-	)}}
-	stdReq := promptcompat.StandardRequest{
-		Surface:         "test",
-		ResponseModel:   "deepseek-v4-flash-search",
-		PromptTokenText: "prompt",
-		FinalPrompt:     "final prompt",
-		Search:          true,
-	}
-
-	result, outErr := ExecuteNonStreamWithRetry(context.Background(), ds, &auth.RequestAuth{}, stdReq, Options{})
-	if outErr != nil {
-		t.Fatalf("unexpected output error: %#v", outErr)
-	}
-	want := "答案[0](https://example.com/ref)。"
-	if result.Turn.Text != want {
-		t.Fatalf("text mismatch: got %q want %q", result.Turn.Text, want)
-	}
-}
-
-func TestStartCompletionAppliesCurrentInputFileGlobally(t *testing.T) {
-	ds := &fakeDeepSeekCaller{responses: []*http.Response{sseHTTPResponse(http.StatusOK, `data: {"p":"response/content","v":"ok"}`)}}
+func TestExecuteNonStreamWithRetryCurrentInputFileIsNoop(t *testing.T) {
+	// SDAI 无文件上传通道：current_input_file 短路，payload 直接透传全量上下文。
+	ds := &fakeDeepSeekCaller{responses: []*http.Response{sseHTTPResponse(http.StatusOK, sdaiTextDelta("ok"), "data: DONE")}}
 	stdReq := promptcompat.StandardRequest{
 		Surface:         "test_adapter",
 		RequestedModel:  "deepseek-v4-flash",
@@ -298,26 +221,80 @@ func TestStartCompletionAppliesCurrentInputFileGlobally(t *testing.T) {
 	if outErr != nil {
 		t.Fatalf("unexpected output error: %#v", outErr)
 	}
-	if len(ds.uploads) != 1 {
-		t.Fatalf("expected current input upload, got %d", len(ds.uploads))
-	}
-	if got := ds.uploads[0].Filename; got != "DS2API_HISTORY.txt" {
-		t.Fatalf("upload filename=%q want DS2API_HISTORY.txt", got)
+	if start.Request.CurrentInputFileApplied {
+		t.Fatal("expected current input file to be a no-op under SDAI")
 	}
 	if len(ds.payloads) != 1 {
 		t.Fatalf("expected one completion payload, got %d", len(ds.payloads))
 	}
-	refIDs, _ := ds.payloads[0]["ref_file_ids"].([]any)
-	if len(refIDs) != 1 || refIDs[0] != "file-runtime-1" {
-		t.Fatalf("expected uploaded file id in ref_file_ids, got %#v", ds.payloads[0]["ref_file_ids"])
+	if content, _ := ds.payloads[0]["content"].(string); content != "first user turn" {
+		t.Fatalf("expected passthrough content, got %q", content)
 	}
-	prompt, _ := ds.payloads[0]["prompt"].(string)
-	if !strings.Contains(prompt, "Continue from the latest state in the attached DS2API_HISTORY.txt context.") {
-		t.Fatalf("expected continuation prompt, got %q", prompt)
+	if _, has := ds.payloads[0]["model_id"]; !has {
+		t.Fatal("expected model_id in SDAI payload")
 	}
-	if !start.Request.CurrentInputFileApplied || !strings.Contains(start.Request.PromptTokenText, "# DS2API_HISTORY.txt") {
-		t.Fatalf("expected prepared request to carry current input file state, got %#v", start.Request)
+}
+
+func TestExecuteNonStreamWithRetryUsesContentSuffixForEmptyRetry(t *testing.T) {
+	ds := &fakeDeepSeekCaller{responses: []*http.Response{
+		sseHTTPResponse(http.StatusOK, sdaiFinish(77), sdaiThinkDelta("plan"), "data: DONE"),
+		sseHTTPResponse(http.StatusOK, sdaiFinish(78), sdaiTextDelta("ok"), "data: DONE"),
+	}}
+	stdReq := promptcompat.StandardRequest{
+		Surface:         "test",
+		ResponseModel:   "deepseek-v4-flash",
+		PromptTokenText: "prompt",
+		FinalPrompt:     "final prompt",
 	}
+
+	result, outErr := ExecuteNonStreamWithRetry(context.Background(), ds, &auth.RequestAuth{}, stdReq, Options{RetryEnabled: true})
+	if outErr != nil {
+		t.Fatalf("unexpected output error: %#v", outErr)
+	}
+	if result.Attempts != 1 {
+		t.Fatalf("expected one retry, got %d", result.Attempts)
+	}
+	if len(ds.payloads) != 2 {
+		t.Fatalf("expected two completion calls, got %d", len(ds.payloads))
+	}
+	// SDAI 无 parent_message_id：fresh retry 在 content 上追加重试后缀。
+	if content, _ := ds.payloads[1]["content"].(string); !strings.Contains(content, "Previous reply had no visible output") {
+		t.Fatalf("expected retry suffix in payload content, got %q", content)
+	}
+	if _, has := ds.payloads[1]["parent_message_id"]; has {
+		t.Fatal("expected no parent_message_id in SDAI payload")
+	}
+	if result.Turn.Text != "ok" {
+		t.Fatalf("retry text mismatch: %q", result.Turn.Text)
+	}
+}
+
+func TestExecuteNonStreamWithRetryPlainText(t *testing.T) {
+	ds := &fakeDeepSeekCaller{responses: []*http.Response{sseHTTPResponse(
+		http.StatusOK,
+		sdaiTextDelta("答案。"),
+		"data: DONE",
+	)}}
+	stdReq := promptcompat.StandardRequest{
+		Surface:         "test",
+		ResponseModel:   "deepseek-v4-flash",
+		PromptTokenText: "prompt",
+		FinalPrompt:     "final prompt",
+	}
+
+	result, outErr := ExecuteNonStreamWithRetry(context.Background(), ds, &auth.RequestAuth{}, stdReq, Options{})
+	if outErr != nil {
+		t.Fatalf("unexpected output error: %#v", outErr)
+	}
+	if result.Turn.Text != "答案。" {
+		t.Fatalf("text mismatch: got %q", result.Turn.Text)
+	}
+}
+
+// isolateTestConfig 防止本地 config.json 覆盖测试注入的 env 配置。
+func isolateTestConfig(t *testing.T) {
+	t.Helper()
+	t.Setenv("DS2API_CONFIG_PATH", t.TempDir()+"/config.json")
 }
 
 func sseHTTPResponse(status int, lines ...string) *http.Response {

@@ -11,7 +11,6 @@ import (
 
 	"ds2api/internal/auth"
 	"ds2api/internal/config"
-	"ds2api/internal/httpapi/openai/history"
 	"ds2api/internal/promptcompat"
 	"ds2api/internal/util"
 
@@ -80,15 +79,10 @@ func (h *Handler) handleVercelStreamPrepare(w http.ResponseWriter, r *http.Reque
 	sessionID, err := h.DS.CreateSession(r.Context(), a, 3)
 	if err != nil {
 		if a.UseConfigToken {
-			writeOpenAIError(w, http.StatusUnauthorized, "Account token is invalid. Please re-login the account in admin.")
+			writeOpenAIError(w, http.StatusUnauthorized, "Account token is invalid. Please update the account token in admin.")
 		} else {
 			writeOpenAIError(w, http.StatusUnauthorized, "Invalid token. If this should be a DS2API key, add it to config.keys first.")
 		}
-		return
-	}
-	powHeader, err := h.DS.GetPow(r.Context(), a, 3)
-	if err != nil {
-		writeOpenAIError(w, http.StatusUnauthorized, "Failed to get PoW (invalid token or unknown error).")
 		return
 	}
 	if strings.TrimSpace(a.DeepSeekToken) == "" {
@@ -112,7 +106,7 @@ func (h *Handler) handleVercelStreamPrepare(w http.ResponseWriter, r *http.Reque
 		"search_enabled":   stdReq.Search,
 		"tool_names":       stdReq.ToolNames,
 		"deepseek_token":   a.DeepSeekToken,
-		"pow_header":       powHeader,
+		"pow_header":       "",
 		"payload":          payload,
 	})
 }
@@ -183,13 +177,9 @@ func (h *Handler) handleVercelStreamPow(w http.ResponseWriter, r *http.Request) 
 		writeOpenAIError(w, http.StatusNotFound, "stream lease not found or expired")
 		return
 	}
-	powHeader, err := h.DS.GetPow(r.Context(), leaseAuth, 3)
-	if err != nil {
-		writeOpenAIError(w, http.StatusInternalServerError, "Failed to get PoW.")
-		return
-	}
+	// SDAI 无 PoW：保留端点以兼容 Node 流式桥调用序列，恒返回空头。
 	writeJSON(w, http.StatusOK, map[string]any{
-		"pow_header": powHeader,
+		"pow_header": "",
 	})
 }
 
@@ -229,27 +219,13 @@ func (h *Handler) handleVercelStreamSwitch(w http.ResponseWriter, r *http.Reques
 	}
 
 	stdReq := lease.Standard
-	var err error
-	if stdReq.CurrentInputFileApplied {
-		stdReq, err = (history.Service{Store: h.Store, DS: h.DS}).ReuploadAppliedCurrentInputFile(r.Context(), a, stdReq)
-		if err != nil {
-			status, message := mapCurrentInputFileError(err)
-			writeOpenAIError(w, status, message)
-			return
-		}
-	}
 	sessionID, err := h.DS.CreateSession(r.Context(), a, 3)
 	if err != nil {
-		writeOpenAIError(w, http.StatusUnauthorized, "Account token is invalid. Please re-login the account in admin.")
-		return
-	}
-	powHeader, err := h.DS.GetPow(r.Context(), a, 3)
-	if err != nil {
-		writeOpenAIError(w, http.StatusUnauthorized, "Failed to get PoW (invalid token or unknown error).")
+		writeOpenAIError(w, http.StatusUnauthorized, "Account token is invalid. Please update the account token in admin.")
 		return
 	}
 	if strings.TrimSpace(a.DeepSeekToken) == "" {
-		writeOpenAIError(w, http.StatusUnauthorized, "Account token is invalid. Please re-login the account in admin.")
+		writeOpenAIError(w, http.StatusUnauthorized, "Account token is invalid. Please update the account token in admin.")
 		return
 	}
 	h.updateStreamLeaseState(leaseID, stdReq, sessionID)
@@ -262,7 +238,7 @@ func (h *Handler) handleVercelStreamSwitch(w http.ResponseWriter, r *http.Reques
 		"search_enabled":   stdReq.Search,
 		"tool_names":       stdReq.ToolNames,
 		"deepseek_token":   a.DeepSeekToken,
-		"pow_header":       powHeader,
+		"pow_header":       "",
 		"payload":          stdReq.CompletionPayload(sessionID),
 	})
 }

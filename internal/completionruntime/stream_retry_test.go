@@ -7,22 +7,20 @@ import (
 	"strings"
 	"testing"
 
-	"ds2api/internal/account"
 	"ds2api/internal/auth"
-	"ds2api/internal/config"
 	"ds2api/internal/httpapi/openai/shared"
 )
 
 func TestExecuteStreamWithRetryUsesSharedRetryPayloadAndUsagePrompt(t *testing.T) {
 	ds := &fakeDeepSeekCaller{responses: []*http.Response{
-		sseHTTPResponse(http.StatusOK, `data: {"p":"response/content","v":"ok"}`),
+		sseHTTPResponse(http.StatusOK, sdaiTextDelta("ok"), "data: DONE"),
 	}}
-	initial := sseHTTPResponse(http.StatusOK, `data: {"response_message_id":77,"p":"response/thinking_content","v":"plan"}`)
-	payload := map[string]any{"prompt": "original prompt"}
+	initial := sseHTTPResponse(http.StatusOK, sdaiFinish(77), sdaiThinkDelta("plan"), "data: DONE")
+	payload := map[string]any{"content": "original prompt", "uuid": "session-1"}
 	attemptsSeen := 0
 	retryPrompt := ""
 
-	ExecuteStreamWithRetry(context.Background(), ds, &auth.RequestAuth{}, initial, payload, "pow", StreamRetryOptions{
+	ExecuteStreamWithRetry(context.Background(), ds, &auth.RequestAuth{}, initial, payload, StreamRetryOptions{
 		Surface:      "test.stream",
 		Stream:       true,
 		RetryEnabled: true,
@@ -52,11 +50,11 @@ func TestExecuteStreamWithRetryUsesSharedRetryPayloadAndUsagePrompt(t *testing.T
 	if len(ds.payloads) != 1 {
 		t.Fatalf("expected one retry completion call, got %d", len(ds.payloads))
 	}
-	if got := ds.payloads[0]["parent_message_id"]; got != 77 {
-		t.Fatalf("retry parent_message_id mismatch: %#v", got)
+	if _, has := ds.payloads[0]["parent_message_id"]; has {
+		t.Fatal("expected no parent_message_id in SDAI retry payload")
 	}
-	if prompt, _ := ds.payloads[0]["prompt"].(string); !strings.Contains(prompt, shared.EmptyOutputRetrySuffix) {
-		t.Fatalf("expected retry suffix in payload prompt, got %q", prompt)
+	if content, _ := ds.payloads[0]["content"].(string); !strings.Contains(content, shared.EmptyOutputRetrySuffix) {
+		t.Fatalf("expected retry suffix in payload content, got %q", content)
 	}
 	if !strings.Contains(retryPrompt, shared.EmptyOutputRetrySuffix) {
 		t.Fatalf("expected retry suffix in usage prompt, got %q", retryPrompt)
@@ -64,38 +62,23 @@ func TestExecuteStreamWithRetryUsesSharedRetryPayloadAndUsagePrompt(t *testing.T
 }
 
 func TestExecuteStreamWithRetrySwitchesManagedAccountBeforeFinal429(t *testing.T) {
-	t.Setenv("DS2API_CONFIG_JSON", `{
-		"keys":["managed-key"],
-		"accounts":[
-			{"email":"acc1@test.com","password":"pwd"},
-			{"email":"acc2@test.com","password":"pwd"}
-		]
-	}`)
-	store := config.LoadStore()
-	resolver := auth.NewResolver(store, account.NewPool(store), func(_ context.Context, acc config.Account) (string, error) {
-		return "token-" + acc.Identifier(), nil
-	})
-	req, _ := http.NewRequest(http.MethodPost, "/", nil)
-	req.Header.Set("Authorization", "Bearer managed-key")
-	a, err := resolver.Determine(req)
-	if err != nil {
-		t.Fatalf("determine failed: %v", err)
-	}
-	defer resolver.Release(a)
+	isolateTestConfig(t)
+	t.Setenv("DS2API_CONFIG_JSON", sdaiTestAccountsConfig())
+	a := sdaiManagedAuth(t)
 
 	ds := &fakeDeepSeekCaller{
 		sessionByAccount: true,
 		responses: []*http.Response{
-			sseHTTPResponse(http.StatusOK, `data: {"response_message_id":12,"p":"response/thinking_content","v":"retry empty"}`),
-			sseHTTPResponse(http.StatusOK, `data: {"response_message_id":21,"p":"response/content","v":"ok from second account"}`),
+			sseHTTPResponse(http.StatusOK, sdaiFinish(12), sdaiThinkDelta("retry empty"), "data: DONE"),
+			sseHTTPResponse(http.StatusOK, sdaiFinish(21), sdaiTextDelta("ok from second account"), "data: DONE"),
 		},
 	}
-	initial := sseHTTPResponse(http.StatusOK, `data: {"response_message_id":11,"p":"response/thinking_content","v":"first empty"}`)
-	payload := map[string]any{"prompt": "original prompt", "chat_session_id": "session-acc1@test.com"}
+	initial := sseHTTPResponse(http.StatusOK, sdaiFinish(11), sdaiThinkDelta("first empty"), "data: DONE")
+	payload := map[string]any{"content": "original prompt", "uuid": "session-acc1@test.com"}
 	attemptsSeen := 0
 	switchedSession := ""
 
-	ExecuteStreamWithRetry(context.Background(), ds, a, initial, payload, "pow", StreamRetryOptions{
+	ExecuteStreamWithRetry(context.Background(), ds, a, initial, payload, StreamRetryOptions{
 		Surface:          "test.stream",
 		Stream:           true,
 		RetryEnabled:     true,
@@ -132,19 +115,10 @@ func TestExecuteStreamWithRetrySwitchesManagedAccountBeforeFinal429(t *testing.T
 	if switchedSession != "session-acc2@test.com" {
 		t.Fatalf("expected switched session id, got %q", switchedSession)
 	}
-	wantAccounts := []string{"acc1@test.com", "acc2@test.com"}
-	if len(ds.completionAccounts) != len(wantAccounts) {
-		t.Fatalf("completion accounts mismatch: got %v want %v", ds.completionAccounts, wantAccounts)
+	if got := ds.payloads[1]["uuid"]; got != "session-acc2@test.com" {
+		t.Fatalf("switched payload uuid mismatch: %#v", got)
 	}
-	for i, want := range wantAccounts {
-		if ds.completionAccounts[i] != want {
-			t.Fatalf("completion account %d = %q want %q (all=%v)", i, ds.completionAccounts[i], want, ds.completionAccounts)
-		}
-	}
-	if got := ds.payloads[1]["chat_session_id"]; got != "session-acc2@test.com" {
-		t.Fatalf("switched payload session mismatch: %#v", got)
-	}
-	if prompt, _ := ds.payloads[1]["prompt"].(string); strings.Contains(prompt, shared.EmptyOutputRetrySuffix) {
-		t.Fatalf("expected switched-account prompt without empty-output suffix, got %q", prompt)
+	if content, _ := ds.payloads[1]["content"].(string); strings.Contains(content, shared.EmptyOutputRetrySuffix) {
+		t.Fatalf("expected switched-account content without empty-output suffix, got %q", content)
 	}
 }

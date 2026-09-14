@@ -2,7 +2,6 @@ package responses
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -20,9 +19,7 @@ func newDirectTokenResolver(t *testing.T) (*config.Store, *auth.Resolver) {
 	t.Setenv("DS2API_CONFIG_JSON", `{"keys":[],"accounts":[]}`)
 	store := config.LoadStore()
 	pool := account.NewPool(store)
-	resolver := auth.NewResolver(store, pool, func(_ context.Context, _ config.Account) (string, error) {
-		return "unused", nil
-	})
+	resolver := auth.NewResolver(store, pool)
 	return store, resolver
 }
 
@@ -30,15 +27,13 @@ func newManagedKeyResolver(t *testing.T) (*config.Store, *auth.Resolver) {
 	t.Helper()
 	t.Setenv("DS2API_CONFIG_JSON", `{
 		"keys":["managed-key"],
-		"accounts":[{"email":"acc@example.com","password":"pwd","token":"account-token"}]
+		"accounts":[{"email":"acc@example.com","token":"account-token"}]
 	}`)
 	t.Setenv("DS2API_ACCOUNT_MAX_INFLIGHT", "1")
 	t.Setenv("DS2API_ACCOUNT_MAX_QUEUE", "0")
 	store := config.LoadStore()
 	pool := account.NewPool(store)
-	resolver := auth.NewResolver(store, pool, func(_ context.Context, _ config.Account) (string, error) {
-		return "unused", nil
-	})
+	resolver := auth.NewResolver(store, pool)
 	return store, resolver
 }
 
