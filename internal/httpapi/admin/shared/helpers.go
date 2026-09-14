@@ -77,7 +77,7 @@ func ComputeSyncHash(store ConfigStore) string {
 		return ""
 	}
 	snap := store.Snapshot().Clone()
-	snap.ClearAccountTokens()
+	// SDAI：token 是用户配置的凭据，需要纳入同步哈希参与变更检测。
 	snap.ClearVercelCredentials()
 	snap.VercelSyncHash = ""
 	snap.VercelSyncTime = 0
@@ -93,7 +93,6 @@ func SyncHashForJSON(s string) string {
 	}
 	cfg.VercelSyncHash = ""
 	cfg.VercelSyncTime = 0
-	cfg.ClearAccountTokens()
 	cfg.ClearVercelCredentials()
 	b, err := json.Marshal(cfg)
 	if err != nil {
@@ -167,7 +166,9 @@ func toAccount(m map[string]any) config.Account {
 		Email:    email,
 		Mobile:   mobile,
 		Password: fieldString(m, "password"),
-		ProxyID:  fieldString(m, "proxy_id"),
+		// SDAI：token 是凭据本体，账号 CRUD 必须接收并保存。
+		Token:   fieldString(m, "token"),
+		ProxyID: fieldString(m, "proxy_id"),
 	}
 }
 

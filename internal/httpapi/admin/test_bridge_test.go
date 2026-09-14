@@ -43,23 +43,11 @@ type testingDSMock struct {
 	deleteAllCalls             int
 }
 
-func (m *testingDSMock) Login(_ context.Context, _ config.Account) (string, error) {
-	m.loginCalls++
-	if m.loginToken == "" {
-		return "token", nil
-	}
-	return m.loginToken, nil
-}
-
 func (m *testingDSMock) CreateSession(_ context.Context, _ *auth.RequestAuth, _ int) (string, error) {
 	return "session-id", nil
 }
 
-func (m *testingDSMock) GetPow(_ context.Context, _ *auth.RequestAuth, _ int) (string, error) {
-	return "pow", nil
-}
-
-func (m *testingDSMock) CallCompletion(_ context.Context, _ *auth.RequestAuth, _ map[string]any, _ string, _ int) (*http.Response, error) {
+func (m *testingDSMock) CallCompletion(_ context.Context, _ *auth.RequestAuth, _ map[string]any, _ int) (*http.Response, error) {
 	return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
 }
 

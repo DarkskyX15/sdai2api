@@ -116,33 +116,18 @@ func (h *Handler) testAccount(ctx context.Context, acc config.Account, model, me
 		}
 		_ = h.Store.UpdateAccountTestStatus(identifier, status)
 	}()
-	token, err := h.DS.Login(ctx, acc)
-	if err != nil {
-		result["message"] = "登录失败: " + err.Error()
+	// SDAI 上游以配置的 Bearer token 为唯一凭据，无自动登录。
+	token := strings.TrimSpace(acc.Token)
+	if token == "" {
+		result["message"] = "账号未配置 token：SDAI 上游需要在账号设置中填入 Bearer token"
 		return result
-	}
-	if err := h.Store.UpdateAccountToken(acc.Identifier(), token); err != nil {
-		result["config_warning"] = "登录成功，但 token 持久化失败（仅保存在内存，重启后会丢失）: " + err.Error()
 	}
 	authCtx := &authn.RequestAuth{UseConfigToken: false, DeepSeekToken: token, AccountID: identifier, Account: acc}
 	proxyCtx := authn.WithAuth(ctx, authCtx)
 	sessionID, err := h.DS.CreateSession(proxyCtx, authCtx, 1)
 	if err != nil {
-		newToken, loginErr := h.DS.Login(proxyCtx, acc)
-		if loginErr != nil {
-			result["message"] = "创建会话失败: " + err.Error()
-			return result
-		}
-		token = newToken
-		authCtx.DeepSeekToken = token
-		if err := h.Store.UpdateAccountToken(acc.Identifier(), token); err != nil {
-			result["config_warning"] = "刷新 token 成功，但 token 持久化失败（仅保存在内存，重启后会丢失）: " + err.Error()
-		}
-		sessionID, err = h.DS.CreateSession(proxyCtx, authCtx, 1)
-		if err != nil {
-			result["message"] = "创建会话失败: " + err.Error()
-			return result
-		}
+		result["message"] = "创建会话失败: " + err.Error()
+		return result
 	}
 
 	// 获取会话数量
@@ -153,36 +138,27 @@ func (h *Handler) testAccount(ctx context.Context, acc config.Account, model, me
 
 	if strings.TrimSpace(message) == "" {
 		result["success"] = true
-		result["message"] = "Token 刷新成功（登录与会话创建成功）"
-		if warning, _ := result["config_warning"].(string); strings.TrimSpace(warning) != "" {
-			result["message"] = result["message"].(string) + "；" + warning
-		}
+		result["message"] = "Token 有效（会话创建成功）"
 		result["response_time"] = int(time.Since(start).Milliseconds())
 		return result
 	}
-	thinking, search, ok := config.GetModelConfig(model)
+	thinking, _, ok := config.GetModelConfig(model)
 	resolvedModel, resolved := config.ResolveModel(modelAliasSnapshotReader{
 		aliases: h.Store.Snapshot().ModelAliases,
 	}, model)
 	if resolved {
 		model = resolvedModel
-		thinking, search, ok = config.GetModelConfig(model)
+		thinking, _, ok = config.GetModelConfig(model)
 	}
 	if !ok {
-		thinking, search = false, false
-	}
-	pow, err := h.DS.GetPow(proxyCtx, authCtx, 1)
-	if err != nil {
-		result["message"] = "获取 PoW 失败: " + err.Error()
-		return result
+		thinking = false
 	}
 	payload := promptcompat.StandardRequest{
 		ResolvedModel: model,
 		FinalPrompt:   prompt.MessagesPrepare([]map[string]any{{"role": "user", "content": message}}),
 		Thinking:      thinking,
-		Search:        search,
 	}.CompletionPayload(sessionID)
-	resp, err := h.DS.CallCompletion(proxyCtx, authCtx, payload, pow, 1)
+	resp, err := h.DS.CallCompletion(proxyCtx, authCtx, payload, 1)
 	if err != nil {
 		result["message"] = "请求失败: " + err.Error()
 		return result
@@ -266,33 +242,17 @@ func (h *Handler) deleteAllSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 每次先登录刷新一次 token，避免使用过期 token。
-	authCtx := &authn.RequestAuth{UseConfigToken: false, AccountID: acc.Identifier(), Account: acc}
-	proxyCtx := authn.WithAuth(r.Context(), authCtx)
-	token, err := h.DS.Login(proxyCtx, acc)
-	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"success": false, "message": "登录失败: " + err.Error()})
+	// SDAI 无自动登录：直接使用账号配置的 token。
+	token := strings.TrimSpace(acc.Token)
+	if token == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "message": "账号未配置 token"})
 		return
 	}
-	_ = h.Store.UpdateAccountToken(acc.Identifier(), token)
-	authCtx.DeepSeekToken = token
 
-	// 删除所有会话
-	err = h.DS.DeleteAllSessionsForToken(proxyCtx, token)
-	if err != nil {
-		// token 可能过期，尝试重新登录并重试一次
-		newToken, loginErr := h.DS.Login(proxyCtx, acc)
-		if loginErr != nil {
-			writeJSON(w, http.StatusOK, map[string]any{"success": false, "message": "删除失败: " + err.Error()})
-			return
-		}
-		token = newToken
-		_ = h.Store.UpdateAccountToken(acc.Identifier(), token)
-		authCtx.DeepSeekToken = token
-		if retryErr := h.DS.DeleteAllSessionsForToken(proxyCtx, token); retryErr != nil {
-			writeJSON(w, http.StatusOK, map[string]any{"success": false, "message": "删除失败: " + retryErr.Error()})
-			return
-		}
+	// 删除所有会话（注意：会连 SDAI 网页端的真实对话一并删除）。
+	if err := h.DS.DeleteAllSessionsForToken(r.Context(), token); err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "message": "删除失败: " + err.Error()})
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "message": "删除成功"})

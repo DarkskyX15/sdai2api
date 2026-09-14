@@ -146,19 +146,14 @@ func (h *Handler) validateAccountsForVercelSync(ctx context.Context, enabled boo
 	if !enabled {
 		return 0, nil
 	}
+	// SDAI 无自动登录：同步前校验降级为"检查 token 是否已配置"。
 	validated, failed := 0, []string{}
 	for _, acc := range h.Store.Snapshot().Accounts {
 		if strings.TrimSpace(acc.Token) != "" {
-			continue
-		}
-		token, err := h.DS.Login(ctx, acc)
-		if err != nil {
-			failed = append(failed, acc.Identifier())
-		} else {
 			validated++
-			_ = h.Store.UpdateAccountToken(acc.Identifier(), token)
+		} else {
+			failed = append(failed, acc.Identifier())
 		}
-		time.Sleep(500 * time.Millisecond)
 	}
 	return validated, failed
 }
@@ -295,7 +290,7 @@ func (h *Handler) exportSyncConfig(req map[string]any) (string, string, error) {
 
 func encodeVercelSyncConfig(cfg config.Config) (string, string, error) {
 	cfg.DropInvalidAccounts()
-	cfg.ClearAccountTokens()
+	// SDAI：token 随配置同步到 Vercel 环境变量（否则部署后账号不可用）。
 	cfg.ClearVercelCredentials()
 	cfg.VercelSyncHash = ""
 	cfg.VercelSyncTime = 0
@@ -313,7 +308,6 @@ func syncHashForJSON(s string) string {
 	}
 	cfg.VercelSyncHash = ""
 	cfg.VercelSyncTime = 0
-	cfg.ClearAccountTokens()
 	cfg.ClearVercelCredentials()
 	b, err := json.Marshal(cfg)
 	if err != nil {

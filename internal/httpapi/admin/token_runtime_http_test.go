@@ -17,6 +17,7 @@ import (
 
 func newHTTPAdminHarness(t *testing.T, rawConfig string, ds adminshared.DeepSeekCaller) http.Handler {
 	t.Helper()
+	t.Setenv("DS2API_CONFIG_PATH", t.TempDir()+"/config.json")
 	t.Setenv("DS2API_CONFIG_JSON", rawConfig)
 	store := config.LoadStore()
 	h := &Handler{
@@ -36,14 +37,14 @@ func adminReq(method, path string, body []byte) *http.Request {
 	return req
 }
 
-func TestConfigImportIgnoresTokenFieldInPayload(t *testing.T) {
+func TestConfigImportPreservesTokenField(t *testing.T) {
 	ds := &testingDSMock{}
 	router := newHTTPAdminHarness(t, `{"accounts":[]}`, ds)
 
 	payload := []byte(`{
 		"mode":"replace",
 		"config":{
-			"accounts":[{"email":"u@example.com","password":"pwd","token":"expired-token"}]
+			"accounts":[{"email":"u@example.com","token":"sdai-bearer-token"}]
 		}
 	}`)
 	rec := httptest.NewRecorder()
@@ -66,15 +67,16 @@ func TestConfigImportIgnoresTokenFieldInPayload(t *testing.T) {
 		t.Fatalf("expected one account, got %d", len(accounts))
 	}
 	accountMap, _ := accounts[0].(map[string]any)
-	if hasToken, _ := accountMap["has_token"].(bool); hasToken {
-		t.Fatalf("expected imported token to be ignored, account=%#v", accountMap)
+	// SDAI：token 是凭据本体，导入后必须保留。
+	if hasToken, _ := accountMap["has_token"].(bool); !hasToken {
+		t.Fatalf("expected imported token to be preserved, account=%#v", accountMap)
 	}
 }
 
-func TestAccountTestRefreshesRuntimeTokenButExportOmitsToken(t *testing.T) {
+func TestAccountTestUsesConfiguredTokenAndExportKeepsToken(t *testing.T) {
 	ds := &testingDSMock{}
 	router := newHTTPAdminHarness(t, `{
-		"accounts":[{"email":"batch@example.com","password":"pwd","token":"stale-token"}]
+		"accounts":[{"email":"batch@example.com","token":"configured-token"}]
 	}`, ds)
 
 	rec := httptest.NewRecorder()
@@ -89,9 +91,6 @@ func TestAccountTestRefreshesRuntimeTokenButExportOmitsToken(t *testing.T) {
 	if ok, _ := testResp["success"].(bool); !ok {
 		t.Fatalf("expected test success, got %#v", testResp)
 	}
-	if ds.loginCalls < 1 {
-		t.Fatalf("expected login to be called at least once, got %d", ds.loginCalls)
-	}
 
 	exportRec := httptest.NewRecorder()
 	router.ServeHTTP(exportRec, adminReq(http.MethodGet, "/config/export", nil))
@@ -103,7 +102,8 @@ func TestAccountTestRefreshesRuntimeTokenButExportOmitsToken(t *testing.T) {
 		t.Fatalf("decode export response: %v", err)
 	}
 	exportJSON, _ := exportResp["json"].(string)
-	if strings.Contains(exportJSON, `"token"`) {
-		t.Fatalf("expected export json to omit tokens, got %s", exportJSON)
+	// SDAI：导出必须包含 token（否则备份/迁移后账号不可用）。
+	if !strings.Contains(exportJSON, "configured-token") {
+		t.Fatalf("expected export json to keep configured token, got %s", exportJSON)
 	}
 }

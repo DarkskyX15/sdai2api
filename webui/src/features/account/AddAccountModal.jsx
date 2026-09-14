@@ -54,24 +54,15 @@ export default function AddAccountModal({
                         />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium mb-1.5">{t('accountManager.mobileOptional')}</label>
-                        <input
-                            type="text"
-                            className="input-field"
-                            placeholder="+86..."
-                            value={newAccount.mobile}
-                            onChange={e => setNewAccount({ ...newAccount, mobile: e.target.value })}
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium mb-1.5">{t('accountManager.passwordLabel')} <span className="text-destructive">*</span></label>
+                        <label className="block text-sm font-medium mb-1.5">{t('accountManager.tokenLabel')} <span className="text-destructive">*</span></label>
                         <input
                             type="password"
                             className="input-field bg-[#09090b]"
-                            placeholder={t('accountManager.passwordPlaceholder')}
-                            value={newAccount.password}
-                            onChange={e => setNewAccount({ ...newAccount, password: e.target.value })}
+                            placeholder={t('accountManager.tokenPlaceholder')}
+                            value={newAccount.token}
+                            onChange={e => setNewAccount({ ...newAccount, token: e.target.value })}
                         />
+                        <p className="text-xs text-muted-foreground mt-1">{t('accountManager.tokenHint')}</p>
                     </div>
                     <div className="flex justify-end gap-2 pt-2">
                         <button onClick={onClose} className="px-4 py-2 rounded-lg border border-border hover:bg-secondary transition-colors text-sm font-medium">{t('actions.cancel')}</button>

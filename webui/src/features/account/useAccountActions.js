@@ -8,7 +8,7 @@ export function useAccountActions({ apiFetch, t, onMessage, onRefresh, config, f
     const [editingAccount, setEditingAccount] = useState(null)
     const [newKey, setNewKey] = useState({ key: '', name: '', remark: '' })
     const [copiedKey, setCopiedKey] = useState(null)
-    const [newAccount, setNewAccount] = useState({ name: '', remark: '', email: '', mobile: '', password: '' })
+    const [newAccount, setNewAccount] = useState({ name: '', remark: '', email: '', token: '' })
     const [editAccount, setEditAccount] = useState({ name: '', remark: '' })
     const [loading, setLoading] = useState(false)
     const [testing, setTesting] = useState({})
@@ -45,13 +45,13 @@ export function useAccountActions({ apiFetch, t, onMessage, onRefresh, config, f
         setShowEditAccount(false)
         setEditingAccount(null)
         setEditAccount({ name: '', remark: '' })
-        setNewAccount({ name: '', remark: '', email: '', mobile: '', password: '' })
+        setNewAccount({ name: '', remark: '', email: '', token: '' })
         setShowAddAccount(true)
     }
 
     const closeAddAccount = () => {
         setShowAddAccount(false)
-        setNewAccount({ name: '', remark: '', email: '', mobile: '', password: '' })
+        setNewAccount({ name: '', remark: '', email: '', token: '' })
     }
 
     const openEditAccount = (account) => {
@@ -130,8 +130,9 @@ export function useAccountActions({ apiFetch, t, onMessage, onRefresh, config, f
     }
 
     const addAccount = async () => {
-        if (!newAccount.password || (!newAccount.email && !newAccount.mobile)) {
-            onMessage('error', t('accountManager.requiredFields'))
+        // SDAI：token 是唯一凭据，必填；email 仅作标识（可选）。
+        if (!newAccount.token || !newAccount.token.trim()) {
+            onMessage('error', t('accountManager.tokenRequired'))
             return
         }
         setLoading(true)

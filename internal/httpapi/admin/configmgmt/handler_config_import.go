@@ -41,7 +41,7 @@ func (h *Handler) configImport(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"detail": err.Error()})
 		return
 	}
-	incoming.ClearAccountTokens()
+	// SDAI：token 是配置的一部分，导入时保留（不再剥离）。
 
 	importedKeys, importedAccounts := 0, 0
 	err = h.Store.Update(func(c *config.Config) error {
