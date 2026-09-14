@@ -7,20 +7,22 @@ import (
 	"testing"
 )
 
-func makeLargeContentSSEBody(t *testing.T, payload string) string {
+func sdaiDeltaLine(t *testing.T, content, deltaType string) string {
 	t.Helper()
 	line, err := json.Marshal(map[string]any{
-		"p": "response/content",
-		"v": payload,
+		"choices": []any{map[string]any{
+			"index": 0,
+			"delta": map[string]any{"content": content, "type": deltaType},
+		}},
 	})
 	if err != nil {
 		t.Fatalf("marshal SSE line failed: %v", err)
 	}
-	return "data: " + string(line) + "\n" + "data: [DONE]\n"
+	return "data: " + string(line) + "\n"
 }
 
 func TestStartParsedLinePumpParsesAndStops(t *testing.T) {
-	body := strings.NewReader("data: {\"p\":\"response/content\",\"v\":\"hi\"}\n\ndata: [DONE]\n")
+	body := strings.NewReader(sdaiDeltaLine(t, "hi", "text") + "\nevent: flag\ndata: DONE\n")
 	results, done := StartParsedLinePump(context.Background(), body, false, "text")
 
 	collected := make([]LineResult, 0, 2)
@@ -44,7 +46,8 @@ func TestStartParsedLinePumpParsesAndStops(t *testing.T) {
 
 func TestStartParsedLinePumpHandlesLongSingleSSELine(t *testing.T) {
 	payload := strings.Repeat("x", 5*1024*1024+4096)
-	results, done := StartParsedLinePump(context.Background(), strings.NewReader(makeLargeContentSSEBody(t, payload)), false, "text")
+	body := sdaiDeltaLine(t, payload, "text") + "data: DONE\n"
+	results, done := StartParsedLinePump(context.Background(), strings.NewReader(body), false, "text")
 
 	var got strings.Builder
 	var sawDone bool

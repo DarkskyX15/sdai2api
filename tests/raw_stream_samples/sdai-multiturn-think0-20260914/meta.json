@@ -1,0 +1,32 @@
+{
+  "sample_id": "sdai-multiturn-think0-20260914",
+  "captured_at_utc": "2026-09-14T00:00:00Z",
+  "source": "python-probe-live-capture",
+  "upstream": "sdai.suda.edu.cn",
+  "endpoint": "https://sdai.suda.edu.cn/backend/api/chat/start",
+  "request": {
+    "model_id": 9,
+    "think": 0,
+    "kb_tid_list": [],
+    "from_uuid": "",
+    "rounds": [
+      {
+        "round": 0,
+        "uuid": "e884a358-7553-414a-b5d9-e138c825d841",
+        "content_chars": 11,
+        "sse_lines": 24
+      },
+      {
+        "round": 1,
+        "uuid": "e884a358-7553-414a-b5d9-e138c825d841",
+        "content_chars": 7,
+        "sse_lines": 18
+      }
+    ]
+  },
+  "capture": {
+    "label": "think=0 two-turn multiturn; round2 proves server-side history",
+    "status_code": 200,
+    "format": "sdai sse: cate/format-header + message(delta.content,type:think|text) + finish + flag:DONE"
+  }
+}

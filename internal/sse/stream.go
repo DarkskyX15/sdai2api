@@ -200,7 +200,9 @@ func startParsedLinePumpWithConfig(ctx context.Context, body io.Reader, thinking
 					for _, p := range result.ToolDetectionThinkingParts {
 						toolDetectionThinkingBuffer.WriteString(p.Text)
 					}
-					if textBuffer.Len() > 0 || len(result.Parts) > 0 || toolDetectionThinkingBuffer.Len() > 0 {
+					// SDAI 思考流可能以 think-only 空输出结束（无 text 段），
+					// flush 条件必须包含 thinkingBuffer。
+					if textBuffer.Len() > 0 || thinkingBuffer.Len() > 0 || len(result.Parts) > 0 || toolDetectionThinkingBuffer.Len() > 0 {
 						for _, p := range result.Parts {
 							if p.Type == "thinking" {
 								thinkingBuffer.WriteString(p.Text)
@@ -318,7 +320,7 @@ func startParsedLinePumpWithConfig(ctx context.Context, body io.Reader, thinking
 					}
 					goto done
 				}
-				result := ParseDeepSeekContentLine(line, thinkingEnabled, currentType)
+				result := ParseSDAIContentLine(line, thinkingEnabled, currentType)
 				if !processLine(result) {
 					goto done
 				}
@@ -331,7 +333,7 @@ func startParsedLinePumpWithConfig(ctx context.Context, body io.Reader, thinking
 					pumpErr = err
 				}
 				for line := range scanCh {
-					result := ParseDeepSeekContentLine(line, thinkingEnabled, currentType)
+					result := ParseSDAIContentLine(line, thinkingEnabled, currentType)
 					if !processLine(result) {
 						goto done
 					}

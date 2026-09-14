@@ -1,271 +1,136 @@
 package sse
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-func TestParseDeepSeekSSELine(t *testing.T) {
-	chunk, done, ok := ParseDeepSeekSSELine([]byte(`data: {"v":"你好"}`))
-	if !ok || done {
-		t.Fatalf("expected parsed chunk")
+func TestParseSDAISSELine(t *testing.T) {
+	cases := []struct {
+		name   string
+		raw    string
+		parsed bool
+		done   bool
+	}{
+		{name: "message delta", raw: `data: {"choices":[{"index":0,"delta":{"content":"你","type":"text"}}]}`, parsed: true},
+		{name: "finish event", raw: `data: {"req_message_pk_id": 13856, "mtid": 3058}`, parsed: true},
+		{name: "flag DONE", raw: "data: DONE", parsed: true, done: true},
+		{name: "event line ignored", raw: "event: message"},
+		{name: "empty line ignored", raw: ""},
+		{name: "cate header ignored", raw: `data: {"format": "STREAM"}`, parsed: true},
+		{name: "invalid json ignored", raw: "data: {broken"},
 	}
-	if chunk["v"] != "你好" {
-		t.Fatalf("unexpected chunk: %#v", chunk)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			chunk, done, parsed := ParseSDAISSELine([]byte(tc.raw))
+			if parsed != tc.parsed || done != tc.done {
+				t.Fatalf("ParseSDAISSELine(%q) = parsed=%v done=%v, want parsed=%v done=%v", tc.raw, parsed, done, tc.parsed, tc.done)
+			}
+			if tc.parsed && !tc.done && chunk == nil {
+				t.Fatal("expected non-nil chunk for parsed data line")
+			}
+		})
 	}
 }
 
-func TestParseDeepSeekSSELineDone(t *testing.T) {
-	_, done, ok := ParseDeepSeekSSELine([]byte(`data: [DONE]`))
-	if !ok || !done {
-		t.Fatalf("expected done signal")
+func TestParseSDAISSELineToleratesCRLF(t *testing.T) {
+	_, done, parsed := ParseSDAISSELine([]byte("data: DONE\r"))
+	if !parsed || !done {
+		t.Fatalf("expected CRLF-terminated DONE to parse, got parsed=%v done=%v", parsed, done)
 	}
 }
 
-func TestParseSSEChunkForContentSimple(t *testing.T) {
-	parts, finished, _ := ParseSSEChunkForContent(map[string]any{"v": "hello"}, false, "text")
-	if finished {
-		t.Fatal("expected unfinished")
+func TestParseSDAIContentLineThinkTextChannels(t *testing.T) {
+	think := ParseSDAIContentLine([]byte(`data: {"choices":[{"index":0,"delta":{"content":"好的","type":"think"}}]}`), true, "thinking")
+	if len(think.Parts) != 1 || think.Parts[0].Type != "thinking" || think.Parts[0].Text != "好的" {
+		t.Fatalf("unexpected think part: %#v", think.Parts)
 	}
-	if len(parts) != 1 || parts[0].Text != "hello" || parts[0].Type != "text" {
-		t.Fatalf("unexpected parts: %#v", parts)
+	if think.NextType != "thinking" {
+		t.Fatalf("expected NextType thinking, got %q", think.NextType)
+	}
+
+	text := ParseSDAIContentLine([]byte(`data: {"choices":[{"index":0,"delta":{"content":"答案","type":"text"}}]}`), true, "thinking")
+	if len(text.Parts) != 1 || text.Parts[0].Type != "text" || text.Parts[0].Text != "答案" {
+		t.Fatalf("unexpected text part: %#v", text.Parts)
+	}
+	if text.NextType != "text" {
+		t.Fatalf("expected NextType text, got %q", text.NextType)
 	}
 }
 
-func TestParseSSEChunkForContentThinking(t *testing.T) {
-	parts, finished, _ := ParseSSEChunkForContent(map[string]any{"p": "response/thinking_content", "v": "think"}, true, "thinking")
-	if finished {
-		t.Fatal("expected unfinished")
+func TestParseSDAIContentLineFinishCarriesMessageID(t *testing.T) {
+	result := ParseSDAIContentLine([]byte(`data: {"req_message_pk_id": 13864, "mtid": 3061}`), true, "text")
+	if !result.Parsed {
+		t.Fatal("expected finish line to parse")
 	}
-	if len(parts) != 1 || parts[0].Type != "thinking" {
-		t.Fatalf("unexpected parts: %#v", parts)
+	if result.Stop {
+		t.Fatal("finish event must not stop the stream; DONE does")
 	}
-}
-
-func TestIsCitation(t *testing.T) {
-	if !IsCitation("[citation:1] abc") {
-		t.Fatal("expected citation true")
-	}
-	if IsCitation("normal text") {
-		t.Fatal("expected citation false")
+	if result.ResponseMessageID != 13864 {
+		t.Fatalf("expected ResponseMessageID=13864, got %d", result.ResponseMessageID)
 	}
 }
 
-func TestParseSSEChunkForContentFragmentsAppendSwitchToResponse(t *testing.T) {
-	chunk := map[string]any{
-		"p": "response/fragments",
-		"o": "APPEND",
-		"v": []any{
-			map[string]any{
-				"type":    "RESPONSE",
-				"content": "你好",
-			},
-		},
-	}
-	parts, finished, nextType := ParseSSEChunkForContent(chunk, true, "thinking")
-	if finished {
-		t.Fatal("expected unfinished")
-	}
-	if nextType != "text" {
-		t.Fatalf("expected next type text, got %q", nextType)
-	}
-	if len(parts) != 1 || parts[0].Type != "text" || parts[0].Text != "你好" {
-		t.Fatalf("unexpected parts: %#v", parts)
+func TestParseSDAIContentLineDone(t *testing.T) {
+	result := ParseSDAIContentLine([]byte("data: DONE"), true, "text")
+	if !result.Parsed || !result.Stop {
+		t.Fatalf("expected DONE to produce parsed stop, got %#v", result)
 	}
 }
 
-func TestParseSSEChunkForContentAfterAppendUsesUpdatedType(t *testing.T) {
-	chunk := map[string]any{
-		"p": "response/fragments/-1/content",
-		"v": "！",
+func TestParseSDAIContentLineIgnoresUnknown(t *testing.T) {
+	result := ParseSDAIContentLine([]byte(`data: {"format": "STREAM"}`), true, "text")
+	if result.Parsed {
+		t.Fatal("expected unknown cate payload to be ignored")
 	}
-	parts, finished, nextType := ParseSSEChunkForContent(chunk, true, "text")
-	if finished {
-		t.Fatal("expected unfinished")
-	}
-	if nextType != "text" {
-		t.Fatalf("expected next type text, got %q", nextType)
-	}
-	if len(parts) != 1 || parts[0].Type != "text" || parts[0].Text != "！" {
-		t.Fatalf("unexpected parts: %#v", parts)
+	if result.NextType != "text" {
+		t.Fatalf("expected current type preserved, got %q", result.NextType)
 	}
 }
 
-func TestParseSSEChunkForContentThinkingDisabledKeepsHiddenFragmentState(t *testing.T) {
-	chunk1 := map[string]any{
-		"p": "response/fragments",
-		"o": "APPEND",
-		"v": []any{
-			map[string]any{"type": "THINK", "content": "我们"},
-		},
-	}
-	parts1, finished1, nextType1 := ParseSSEChunkForContent(chunk1, false, "text")
-	if finished1 {
-		t.Fatal("expected first chunk unfinished")
-	}
-	if nextType1 != "thinking" {
-		t.Fatalf("expected hidden THINK fragment to keep next type thinking, got %q", nextType1)
-	}
-	if len(parts1) != 0 {
-		t.Fatalf("expected hidden thinking to be dropped, got %#v", parts1)
-	}
-
-	chunk2 := map[string]any{
-		"p": "response/fragments/-1/content",
-		"v": "被",
-	}
-	parts2, finished2, nextType2 := ParseSSEChunkForContent(chunk2, false, nextType1)
-	if finished2 {
-		t.Fatal("expected second chunk unfinished")
-	}
-	if nextType2 != "thinking" {
-		t.Fatalf("expected hidden continuation to keep next type thinking, got %q", nextType2)
-	}
-	if len(parts2) != 0 {
-		t.Fatalf("expected hidden continuation to be dropped, got %#v", parts2)
-	}
-
-	chunk3 := map[string]any{"v": "要求"}
-	parts3, finished3, nextType3 := ParseSSEChunkForContent(chunk3, false, nextType2)
-	if finished3 {
-		t.Fatal("expected third chunk unfinished")
-	}
-	if nextType3 != "thinking" {
-		t.Fatalf("expected pathless hidden continuation to keep next type thinking, got %q", nextType3)
-	}
-	if len(parts3) != 0 {
-		t.Fatalf("expected pathless hidden continuation to be dropped, got %#v", parts3)
-	}
-
-	chunk4 := map[string]any{
-		"p": "response/fragments",
-		"o": "APPEND",
-		"v": []any{
-			map[string]any{"type": "RESPONSE", "content": "答"},
-		},
-	}
-	parts4, finished4, nextType4 := ParseSSEChunkForContent(chunk4, false, nextType3)
-	if finished4 {
-		t.Fatal("expected fourth chunk unfinished")
-	}
-	if nextType4 != "text" {
-		t.Fatalf("expected RESPONSE fragment to switch next type text, got %q", nextType4)
-	}
-	if len(parts4) != 1 || parts4[0].Type != "text" || parts4[0].Text != "答" {
-		t.Fatalf("expected visible response text, got %#v", parts4)
+func TestParseSDAIContentLineEmptyContent(t *testing.T) {
+	result := ParseSDAIContentLine([]byte(`data: {"choices":[{"index":0,"delta":{"content":"","type":"text"}}]}`), true, "text")
+	if len(result.Parts) != 0 {
+		t.Fatalf("expected no parts for empty content, got %#v", result.Parts)
 	}
 }
 
-func TestParseSSEChunkForContentAutoTransitionsThinkClose(t *testing.T) {
-	chunk := map[string]any{
-		"p": "response/thinking_content",
-		"v": "deep thoughts</think>actual answer",
+func TestCollectStreamSDAI(t *testing.T) {
+	sseBody := strings.Join([]string{
+		`event: message`,
+		`data: {"choices":[{"index":0,"delta":{"content":"好的，我们","type":"think"}}]}`,
+		``,
+		`event: message`,
+		`data: {"choices":[{"index":0,"delta":{"content":"首先","type":"think"}}]}`,
+		``,
+		`event: message`,
+		`data: {"choices":[{"index":0,"delta":{"content":"9.9 更大。","type":"text"}}]}`,
+		``,
+		`event: finish`,
+		`data: {"req_message_pk_id": 13864, "mtid": 3061}`,
+		``,
+		`event: flag`,
+		`data: DONE`,
+		``,
+	}, "\n")
+	resp := makeSSEResponse(sseBody)
+	result := CollectStream(resp, true, true)
+	if result.Thinking != "好的，我们首先" {
+		t.Fatalf("unexpected thinking: %q", result.Thinking)
 	}
-	parts, _, _ := ParseSSEChunkForContent(chunk, true, "thinking")
-	if len(parts) != 2 {
-		t.Fatalf("expected 2 parts from split, got %d: %#v", len(parts), parts)
+	if result.Text != "9.9 更大。" {
+		t.Fatalf("unexpected text: %q", result.Text)
 	}
-	if parts[0].Type != "thinking" || parts[0].Text != "deep thoughts" {
-		t.Fatalf("first part should be thinking: %#v", parts[0])
+	if result.ToolDetectionThinking != result.Thinking {
+		t.Fatalf("expected detection thinking to mirror thinking")
 	}
-	if parts[1].Type != "text" || parts[1].Text != "actual answer" {
-		t.Fatalf("second part should be text: %#v", parts[1])
+	if result.ResponseMessageID != 13864 {
+		t.Fatalf("expected ResponseMessageID 13864, got %d", result.ResponseMessageID)
 	}
-}
-
-func TestParseSSEChunkForContentStripsLeakedThinkTags(t *testing.T) {
-	chunk := map[string]any{
-		"p": "response/thinking_content",
-		"v": "<think>more thoughts</think>  answer",
+	if result.ContentFilter {
+		t.Fatal("SDAI has no content filter signal")
 	}
-	parts, _, _ := ParseSSEChunkForContent(chunk, true, "thinking")
-	if len(parts) != 2 {
-		t.Fatalf("expected 2 parts, got %d: %#v", len(parts), parts)
-	}
-	if parts[0].Type != "thinking" || parts[0].Text != "<think>more thoughts" {
-		// note: the open tag is before the split, so it remains in the thinking part.
-		// that's fine, the output sanitization handles the final string.
-		t.Fatalf("first part mismatch: %#v", parts[0])
-	}
-	if parts[1].Type != "text" || parts[1].Text != "  answer" {
-		t.Fatalf("second part mismatch: %#v", parts[1])
-	}
-}
-
-func TestParseSSEChunkForContentAutoTransitionsState(t *testing.T) {
-	chunk1 := map[string]any{
-		"p": "response/thinking_content",
-		"v": "end of thought</think>start of text",
-	}
-	parts1, _, nextType1 := ParseSSEChunkForContent(chunk1, true, "thinking")
-	if len(parts1) != 2 || parts1[1].Type != "text" {
-		t.Fatalf("expected split parts, got %#v", parts1)
-	}
-	if nextType1 != "text" {
-		t.Fatalf("expected nextType to transition to text, got %q", nextType1)
-	}
-
-	chunk2 := map[string]any{
-		"p": "response/thinking_content",
-		"v": "more actual text sent to thinking path",
-	}
-	parts2, _, nextType2 := ParseSSEChunkForContent(chunk2, true, nextType1)
-	if len(parts2) != 1 || parts2[0].Type != "text" {
-		t.Fatalf("expected subsequent parts to be text, got %#v", parts2)
-	}
-	if nextType2 != "text" {
-		t.Fatalf("expected nextType2 to remain text, got %q", nextType2)
-	}
-}
-
-func TestParseSSEChunkForContentStripsLeakedThinkTagsFromText(t *testing.T) {
-	chunk := map[string]any{
-		"p": "response/content", // This makes the part type "text"
-		"v": "normal text <think>leaked</think> end",
-	}
-	parts, _, _ := ParseSSEChunkForContent(chunk, true, "text")
-	if len(parts) != 1 {
-		t.Fatalf("expected 1 part, got %d: %#v", len(parts), parts)
-	}
-	if parts[0].Type != "text" || parts[0].Text != "normal text leaked end" {
-		t.Fatalf("expected leaked think tag to be stripped, got %#v", parts[0])
-	}
-}
-
-func TestParseSSEChunkForContentResponseContentObjectShape(t *testing.T) {
-	chunk := map[string]any{
-		"p": "response/content",
-		"v": map[string]any{"text": "对象内容"},
-	}
-	parts, finished, _ := ParseSSEChunkForContent(chunk, false, "text")
-	if finished {
-		t.Fatal("expected unfinished")
-	}
-	if len(parts) != 1 || parts[0].Text != "对象内容" || parts[0].Type != "text" {
-		t.Fatalf("unexpected parts: %#v", parts)
-	}
-}
-
-func TestParseSSEChunkForThinkingContentObjectShape(t *testing.T) {
-	chunk := map[string]any{
-		"p": "response/thinking_content",
-		"v": map[string]any{"content": "对象思考"},
-	}
-	parts, finished, _ := ParseSSEChunkForContent(chunk, true, "thinking")
-	if finished {
-		t.Fatal("expected unfinished")
-	}
-	if len(parts) != 1 || parts[0].Text != "对象思考" || parts[0].Type != "thinking" {
-		t.Fatalf("unexpected parts: %#v", parts)
-	}
-}
-
-func TestParseSSEChunkForContentObjectShapeWithoutPath(t *testing.T) {
-	chunk := map[string]any{
-		"v": map[string]any{"text": "无路径对象内容"},
-	}
-	parts, finished, _ := ParseSSEChunkForContent(chunk, false, "text")
-	if finished {
-		t.Fatal("expected unfinished")
-	}
-	if len(parts) != 1 || parts[0].Text != "无路径对象内容" || parts[0].Type != "text" {
-		t.Fatalf("unexpected parts: %#v", parts)
+	if result.CitationLinks != nil {
+		t.Fatal("SDAI has no citation links")
 	}
 }

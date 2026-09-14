@@ -1,0 +1,1126 @@
+# ===== round 0: content='9.11和9.9哪个大？' uuid=0784d6ac-5008-479e-9e3a-e40f139e2f1d =====
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "好的", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "，我们", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "首先", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "需要进行", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "深度", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "思考。\n\n", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "**问题", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "拆解", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "**", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "：\n这个问题", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "表面上", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "是在", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "比较", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "两个数字", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "：9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".11", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "和9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "。核心", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "是", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "判断哪个", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "数值", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "更大。\n\n", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "**背景", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "分析**", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "：\n1", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ". ", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": " **", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "十进制", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "比较**", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "：在", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "标准", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "数学中", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "，比较", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "小数", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "时，", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "先比较", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "整数部分", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "（", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9 vs", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": " 9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "，相同", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "），再", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "比较十分", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "位（", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "1 vs", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": " 9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "）。", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "十分", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "位上", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "1", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": " <", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": " 9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "，因此", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9.", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "11 <", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": " 9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "。\n2", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ". ", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": " **常见", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "误解来源", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "**：", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "很多人", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "可能会因为", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".11", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "有两位", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "小数", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "、", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "只有一位", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "小数，", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "而误", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "以为9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".11", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "更大。", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "这是一种", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "“", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "位数", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "越多", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "数", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "越大”", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "的错觉", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "。\n", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "3.", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "  **", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "非", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "数学", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "领域的", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "误解", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "**", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "：在某些", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "非", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "十进制", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "场景", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "下（", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "例如", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "版本", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "号9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".11", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": " vs ", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9.", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9），", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "或者", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "语言", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "表达", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "中", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "（", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "如“", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9点", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "11”", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "听起来", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "比", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "“", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9点", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9”", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "大），", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "可能会", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "产生歧", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "义。", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "但在", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "纯", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "数值", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "比较中", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "，这并不是", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "问题", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "。\n\n**", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "多角度", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "审视**", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "：\n-", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": " **数学", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "角度**", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "：严格", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "基于", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "十进制位", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "值原理", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "，9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": " = ", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9.", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "90，", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "显然", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "大于", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9.", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "11。\n", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "- **", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "心理", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "/", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "直觉", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "角度", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "**：", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "人们可能", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "受到", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "“11", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": " >", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": " 9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "”这种", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "数字", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "片段", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "的影响", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "，忽略", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "小数", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "点的位", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "值", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "。\n", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "- **", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "实际", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "应用角度", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "**：", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "在", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "比较", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "价格", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "、长度", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "、重量", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "等物理", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "量时", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "，9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "总是", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "大于9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".11", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "。\n\n**", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "潜在争议", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "或盲", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "点**", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "：\n-", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": " ", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "唯一的", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "争议点是", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "：如果", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "提问", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "者是在", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "玩一个", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "“", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "网络", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "梗”", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "或“", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "逻辑", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "陷阱”（", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "例如", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "某些", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "测试", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "中", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "，故意", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "引导", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "人", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "犯错", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "），那么", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "正确", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "回答是", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "更大", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "。但如果", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "有人故意", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "把", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".11", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "解释为", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "“9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "点1", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "分1", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "秒”", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "之类的", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "非数学", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "概念", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "，", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "则比较", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "标准", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "需要", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "重新", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "定义。", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "但问题", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "明确", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "问", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "“", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "哪个大", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "”，默认", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "指", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "数值", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "大小。\n", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "- ", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "另一个盲", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "点是小数", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "末尾", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "的0", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "：", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "可以", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "写成9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".90", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "，而", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9.", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "11是", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9.", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "11，", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "比较", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "时最好", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "统一", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "位数", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "。\n\n**", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "推理逻辑", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "**：\n", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "这是", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "最", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "基础的数学", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "比较问题", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "。", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "我", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "直接", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "采用", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "数学", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "四", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "则运算", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "中的小数", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "比较规则", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "：从左", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "到右", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "逐", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "位比较", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "。整数", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "部分相同", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "，十分", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "位1", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": " <", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": " 9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "，所以", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".11", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": " < ", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9.", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9。", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "因此答案", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "确定", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "：9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".9", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "更大", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "。\n\n", "type": "think"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "\n\n在", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "标准的", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "数学数值", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "比较中", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "，**", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9.", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9 ", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "更大", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "**。\n\n", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "比较", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "的方法是", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "：先", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "看整数", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "部分，", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "都是", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9；", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "然后", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "看", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "小数点", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "后第一位", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "（十分", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "位），", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9.", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9的", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "十分位", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "是9", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "，而", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9.", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "11的", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "十分位", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "是1", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "。", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "由于", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": " > ", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "1，", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "因此", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9.", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9 >", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": " 9", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".11", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "。\n\n**", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "常见", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "误区", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "**", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "：有人", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "可能会因为", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "9", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".11", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "有两位", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "小数", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "而误", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "以为它", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "更大，", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "但这是", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "错误的", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "。小数", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "比较看", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "的是位", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "值，", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "而不是位数", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "。", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "例如，", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "0", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".9", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "（十分", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "之九", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "）显然", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "大于0", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": ".11", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "（百分之", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "十一）。", "type": "text"}}]}
+
+event: finish
+data: {"req_message_pk_id": 13884, "mtid": 3070}
+
+event: flag
+data: DONE
+

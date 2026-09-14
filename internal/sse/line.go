@@ -1,10 +1,6 @@
 package sse
 
-import (
-	"fmt"
-)
-
-// LineResult is the normalized parse result for one DeepSeek SSE line.
+// LineResult is the normalized parse result for one SDAI SSE line.
 type LineResult struct {
 	Parsed                     bool
 	Stop                       bool
@@ -16,51 +12,49 @@ type LineResult struct {
 	ResponseMessageID          int
 }
 
-// ParseDeepSeekContentLine centralizes one-line DeepSeek SSE parsing for both
+// ParseSDAIContentLine centralizes one-line SDAI SSE parsing for both
 // streaming and non-streaming handlers.
-func ParseDeepSeekContentLine(raw []byte, thinkingEnabled bool, currentType string) LineResult {
-	chunk, done, parsed := ParseDeepSeekSSELine(raw)
+func ParseSDAIContentLine(raw []byte, thinkingEnabled bool, currentType string) LineResult {
+	chunk, done, parsed := ParseSDAISSELine(raw)
 	if !parsed {
 		return LineResult{NextType: currentType}
 	}
 	if done {
 		return LineResult{Parsed: true, Stop: true, NextType: currentType}
 	}
-	if errObj, hasErr := chunk["error"]; hasErr {
-		return LineResult{
-			Parsed:       true,
-			Stop:         true,
-			ErrorMessage: fmt.Sprintf("%v", errObj),
-			NextType:     currentType,
+	// finish 事件：携带 req_message_pk_id（上游消息 ID），用于日志与重试关联；
+	// 真正的结束信号由 flag 事件的 DONE 给出。
+	if pk := reqMessagePkID(chunk); pk > 0 {
+		return LineResult{Parsed: true, NextType: currentType, ResponseMessageID: pk}
+	}
+	// 未知 data（如 cate 事件的 {"format":"STREAM"}）不产生内容。
+	if _, hasChoices := chunk["choices"]; !hasChoices {
+		return LineResult{NextType: currentType}
+	}
+	parts, nextType := deltaParts(chunk, thinkingEnabled, currentType)
+	// thinking 关闭时 think 增量不出现在可见 parts，但仍需进入
+	// tool 检测通道（隐藏思考中的 DSML 工具调用要能被提升）。
+	detectionParts := make([]ContentPart, 0, len(parts))
+	if !thinkingEnabled {
+		visibleParts, _ := deltaParts(chunk, true, currentType)
+		for _, p := range visibleParts {
+			if p.Type == "thinking" {
+				detectionParts = append(detectionParts, p)
+			}
 		}
 	}
-	if code, _ := chunk["code"].(string); code == "content_filter" {
-		return LineResult{
-			Parsed:        true,
-			Stop:          true,
-			ContentFilter: true,
-			NextType:      currentType,
-		}
-	}
-	if hasContentFilterStatus(chunk) {
-		return LineResult{
-			Parsed:        true,
-			Stop:          true,
-			ContentFilter: true,
-			NextType:      currentType,
-		}
-	}
-	parts, detectionThinkingParts, finished, nextType := ParseSSEChunkForContentDetailed(chunk, thinkingEnabled, currentType)
-	parts = filterLeakedContentFilterParts(parts)
-	detectionThinkingParts = filterLeakedContentFilterParts(detectionThinkingParts)
-	var respMsgID int
-	observeResponseMessageID(chunk, &respMsgID)
 	return LineResult{
 		Parsed:                     true,
-		Stop:                       finished,
 		Parts:                      parts,
-		ToolDetectionThinkingParts: detectionThinkingParts,
+		ToolDetectionThinkingParts: detectionParts,
 		NextType:                   nextType,
-		ResponseMessageID:          respMsgID,
+		ResponseMessageID:          0,
 	}
+}
+
+func reqMessagePkID(chunk map[string]any) int {
+	if v, ok := chunk["req_message_pk_id"].(float64); ok && v > 0 {
+		return int(v)
+	}
+	return 0
 }

@@ -1,0 +1,44 @@
+# ===== round 0: content='我的名字叫小明，请记住' uuid=e884a358-7553-414a-b5d9-e138c825d841 =====
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "好的", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "，小明，", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "我记住你的名字了", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "。我会在后续的对话", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "中称呼你为小明。有什么", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "我可以帮你的吗？", "type": "text"}}]}
+
+event: finish
+data: {"req_message_pk_id": 13880, "mtid": 3069}
+
+event: flag
+data: DONE
+
+# ===== round 1: content='我叫什么名字？' uuid=e884a358-7553-414a-b5d9-e138c825d841 =====
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "你", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "叫小明。", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": " 😊 有什么其他", "type": "text"}}]}
+
+event: message
+data: {"choices": [{"index": 0, "delta": {"content": "我可以为你做的吗？", "type": "text"}}]}
+
+event: finish
+data: {"req_message_pk_id": 13882}
+
+event: flag
+data: DONE
+

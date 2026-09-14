@@ -24,53 +24,23 @@ func TestStartParsedLinePumpEmptyBody(t *testing.T) {
 	}
 }
 
-func TestStartParsedLinePumpMultipleLines(t *testing.T) {
+func TestStartParsedLinePumpTypeTracking(t *testing.T) {
 	body := strings.NewReader(
-		"data: {\"p\":\"response/thinking_content\",\"v\":\"think\"}\n" +
-			"data: {\"p\":\"response/content\",\"v\":\"text\"}\n" +
-			"data: [DONE]\n",
+		sdaiDeltaLine(t, "思", "think") +
+			sdaiDeltaLine(t, "考", "think") +
+			sdaiDeltaLine(t, "答", "text") +
+			sdaiDeltaLine(t, "案", "text") +
+			"event: finish\ndata: {\"req_message_pk_id\": 42}\n" +
+			"event: flag\ndata: DONE\n",
 	)
 	results, done := StartParsedLinePump(context.Background(), body, true, "thinking")
 
-	collected := make([]LineResult, 0)
-	for r := range results {
-		collected = append(collected, r)
-	}
-	if err := <-done; err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(collected) < 2 {
-		t.Fatalf("expected at least 2 results, got %d", len(collected))
-	}
-	hasThinking := false
-	for _, r := range collected {
-		for _, p := range r.Parts {
-			if p.Type == "thinking" {
-				hasThinking = true
-			}
-		}
-	}
-	if !hasThinking {
-		t.Fatal("expected thinking part in results")
-	}
-	last := collected[len(collected)-1]
-	if !last.Stop {
-		t.Fatal("expected last result to be stop")
-	}
-}
-
-func TestStartParsedLinePumpTypeTracking(t *testing.T) {
-	body := strings.NewReader(
-		"data: {\"p\":\"response/fragments\",\"o\":\"APPEND\",\"v\":[{\"type\":\"THINK\",\"content\":\"思\"}]}\n" +
-			"data: {\"p\":\"response/fragments/-1/content\",\"v\":\"考\"}\n" +
-			"data: {\"p\":\"response/fragments\",\"o\":\"APPEND\",\"v\":[{\"type\":\"RESPONSE\",\"content\":\"答\"}]}\n" +
-			"data: {\"p\":\"response/fragments/-1/content\",\"v\":\"案\"}\n" +
-			"data: [DONE]\n",
-	)
-	results, done := StartParsedLinePump(context.Background(), body, true, "text")
-
 	types := make([]string, 0)
+	var sawMessageID int
 	for r := range results {
+		if r.ResponseMessageID > 0 {
+			sawMessageID = r.ResponseMessageID
+		}
 		for _, p := range r.Parts {
 			types = append(types, p.Type)
 		}
@@ -96,6 +66,9 @@ func TestStartParsedLinePumpTypeTracking(t *testing.T) {
 	if !hasText {
 		t.Fatalf("expected text type in results, got %v", types)
 	}
+	if sawMessageID != 42 {
+		t.Fatalf("expected finish event message id 42, got %d", sawMessageID)
+	}
 }
 
 func TestStartParsedLinePumpContextCancellation(t *testing.T) {
@@ -105,7 +78,7 @@ func TestStartParsedLinePumpContextCancellation(t *testing.T) {
 	results, done := StartParsedLinePump(ctx, pr, false, "text")
 
 	go func() {
-		_, _ = io.WriteString(pw, "data: {\"p\":\"response/content\",\"v\":\"hello\"}\n")
+		_, _ = io.WriteString(pw, sdaiDeltaLine(t, "hello", "text"))
 		time.Sleep(50 * time.Millisecond)
 		_ = pw.Close()
 	}()
@@ -127,7 +100,7 @@ func TestStartParsedLinePumpContextCancellation(t *testing.T) {
 }
 
 func TestStartParsedLinePumpOnlyDONE(t *testing.T) {
-	body := strings.NewReader("data: [DONE]\n")
+	body := strings.NewReader("event: flag\ndata: DONE\n")
 	results, done := StartParsedLinePump(context.Background(), body, false, "text")
 
 	collected := make([]LineResult, 0)
@@ -140,16 +113,18 @@ func TestStartParsedLinePumpOnlyDONE(t *testing.T) {
 		t.Fatalf("expected 1 result, got %d", len(collected))
 	}
 	if !collected[0].Stop {
-		t.Fatal("expected stop on [DONE]")
+		t.Fatal("expected stop on DONE")
 	}
 }
 
-func TestStartParsedLinePumpNonSSELines(t *testing.T) {
+func TestStartParsedLinePumpUnknownEventsIgnored(t *testing.T) {
 	body := strings.NewReader(
-		"event: update\n" +
-			": comment line\n" +
-			"data: {\"p\":\"response/content\",\"v\":\"valid\"}\n" +
-			"data: [DONE]\n",
+		"event: cate\n" +
+			"data: {\"format\": \"STREAM\"}\n" +
+			"event: message\n" +
+			sdaiDeltaLine(t, "valid", "text") +
+			"event: flag\n" +
+			"data: DONE\n",
 	)
 	results, done := StartParsedLinePump(context.Background(), body, false, "text")
 
@@ -168,12 +143,9 @@ func TestStartParsedLinePumpNonSSELines(t *testing.T) {
 
 func TestStartParsedLinePumpThinkingDisabled(t *testing.T) {
 	body := strings.NewReader(
-		"data: {\"p\":\"response/fragments\",\"o\":\"APPEND\",\"v\":[{\"type\":\"THINK\",\"content\":\"思\"}]}\n" +
-			"data: {\"p\":\"response/fragments/-1/content\",\"v\":\"考\"}\n" +
-			"data: {\"v\":\"隐藏\"}\n" +
-			"data: {\"p\":\"response/fragments\",\"o\":\"APPEND\",\"v\":[{\"type\":\"RESPONSE\",\"content\":\"答\"}]}\n" +
-			"data: {\"p\":\"response/content\",\"v\":\"response\"}\n" +
-			"data: [DONE]\n",
+		sdaiDeltaLine(t, "思", "think") +
+			sdaiDeltaLine(t, "答", "text") +
+			"data: DONE\n",
 	)
 	results, done := StartParsedLinePump(context.Background(), body, false, "text")
 
@@ -190,16 +162,16 @@ func TestStartParsedLinePumpThinkingDisabled(t *testing.T) {
 		}
 		got.WriteString(p.Text)
 	}
-	if got.String() != "答response" {
+	if got.String() != "答" {
 		t.Fatalf("expected hidden thinking to be dropped, got %q from %#v", got.String(), parts)
 	}
 }
 
 func TestStartParsedLinePumpAccumulatesSmallChunks(t *testing.T) {
 	body := strings.NewReader(
-		"data: {\"p\":\"response/content\",\"v\":\"h\"}\n" +
-			"data: {\"p\":\"response/content\",\"v\":\"i\"}\n" +
-			"data: [DONE]\n",
+		sdaiDeltaLine(t, "h", "text") +
+			sdaiDeltaLine(t, "i", "text") +
+			"data: DONE\n",
 	)
 
 	results, done := StartParsedLinePump(context.Background(), body, false, "text")
@@ -225,34 +197,5 @@ func TestStartParsedLinePumpAccumulatesSmallChunks(t *testing.T) {
 	}
 	if allText.String() != "hi" {
 		t.Fatalf("expected accumulated text 'hi', got %q", allText.String())
-	}
-}
-
-func TestStartParsedLinePumpFirstFlushImmediate(t *testing.T) {
-	body := strings.NewReader(
-		"data: {\"p\":\"response/content\",\"v\":\"Hi\"}\n" +
-			"data: [DONE]\n",
-	)
-
-	results, done := StartParsedLinePump(context.Background(), body, false, "text")
-
-	collected := make([]LineResult, 0)
-	for r := range results {
-		collected = append(collected, r)
-	}
-	if err := <-done; err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	hasContent := false
-	for _, r := range collected {
-		for _, p := range r.Parts {
-			if p.Text == "Hi" {
-				hasContent = true
-			}
-		}
-	}
-	if !hasContent {
-		t.Fatal("expected 'Hi' content in results")
 	}
 }
