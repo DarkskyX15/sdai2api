@@ -63,9 +63,11 @@ func CollectStream(resp *http.Response, thinkingEnabled bool, closeBody bool) Co
 	})
 	thinkingText := thinking.String()
 	return CollectResult{
-		Text:                  text.String(),
-		Thinking:              thinkingText,
-		ToolDetectionThinking: thinkingText + detectionThinking.String(),
+		Text:     text.String(),
+		Thinking: thinkingText,
+		// parser 已保证 ToolDetectionThinkingParts 含全部 think 增量
+		//（thinking 开关不影响），检测通道直接取累计值，避免重复拼接。
+		ToolDetectionThinking: detectionThinking.String(),
 		ContentFilter:         false,
 		CitationLinks:         nil,
 		ResponseMessageID:     responseMessageID,

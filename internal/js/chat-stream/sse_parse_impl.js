@@ -97,6 +97,9 @@ function parseChunkForContent(chunk, thinkingEnabled, currentType, stripReferenc
 
   let newType = currentType;
   const parts = [];
+  // think 增量无论 thinking 开关都进入检测通道：模型可能只在思考流里
+  // 输出 DSML 工具调用块（正文为空），finalize 依赖它提升工具调用。
+  const detectionParts = [];
   for (const choice of chunk.choices) {
     if (!choice || typeof choice !== 'object') {
       continue;
@@ -112,6 +115,7 @@ function parseChunkForContent(chunk, thinkingEnabled, currentType, stripReferenc
     const deltaType = String(delta.type || '').toLowerCase();
     if (deltaType === 'think') {
       newType = 'thinking';
+      detectionParts.push({ text: content, type: 'thinking' });
       if (thinkingEnabled) {
         parts.push({ text: content, type: 'thinking' });
       }
@@ -124,6 +128,7 @@ function parseChunkForContent(chunk, thinkingEnabled, currentType, stripReferenc
   return {
     parsed: true,
     parts,
+    detectionParts,
     finished: false,
     contentFilter: false,
     errorMessage: '',

@@ -31,17 +31,21 @@ func ParseSDAIContentLine(raw []byte, thinkingEnabled bool, currentType string) 
 	if _, hasChoices := chunk["choices"]; !hasChoices {
 		return LineResult{NextType: currentType}
 	}
-	parts, nextType := deltaParts(chunk, thinkingEnabled, currentType)
-	// thinking 关闭时 think 增量不出现在可见 parts，但仍需进入
-	// tool 检测通道（隐藏思考中的 DSML 工具调用要能被提升）。
-	detectionParts := make([]ContentPart, 0, len(parts))
-	if !thinkingEnabled {
-		visibleParts, _ := deltaParts(chunk, true, currentType)
-		for _, p := range visibleParts {
-			if p.Type == "thinking" {
-				detectionParts = append(detectionParts, p)
+	// think 增量无论 thinking 开关都必须进入 tool 检测通道：
+	// 模型可能只在思考流里输出 DSML 工具调用块（正文为空），
+	// 流式 finalize 依赖该通道提升工具调用（回归：仅关闭时填充会导致
+	// thinking 开启场景误判 upstream_empty_output）。
+	allParts, nextType := deltaParts(chunk, true, currentType)
+	parts := make([]ContentPart, 0, len(allParts))
+	detectionParts := make([]ContentPart, 0, len(allParts))
+	for _, p := range allParts {
+		if p.Type == "thinking" {
+			detectionParts = append(detectionParts, p)
+			if !thinkingEnabled {
+				continue
 			}
 		}
+		parts = append(parts, p)
 	}
 	return LineResult{
 		Parsed:                     true,

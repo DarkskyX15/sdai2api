@@ -429,6 +429,37 @@ func TestHandleStreamPromotesThinkingToolCallsOnFinalizeWithoutMidstreamIntercep
 	}
 }
 
+// 回归：Mini Pilot Agent 线上故障——thinking 开启时模型把 DSML 工具块
+// 只写进 think 通道（正文为空），流式 finalize 必须能提升为 tool_calls，
+// 而不是误报 upstream_empty_output（429）。
+func TestHandleStreamPromotesVisibleThinkingDSMLToolCallsWhenTextEmpty(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"choices":[{"index":0,"delta":{"content":"问题拆解：需要读取脚本内容。","type":"think"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"<|DSML|tool_calls>","type":"think"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"<|DSML|invoke name=\"read_file\">","type":"think"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"<|DSML|parameter name=\"path\"><![CDATA[scripts/echo.ps1]]></|DSML|parameter>","type":"think"}}]}`,
+		`data: {"choices":[{"index":0,"delta":{"content":"</|DSML|invoke></|DSML|tool_calls>","type":"think"}}]}`,
+		`data: DONE`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	// thinkingEnabled=true（第 8 个参数），复刻 Agent 的 thinking 开启场景。
+	h.handleStream(rec, req, resp, "cid-visible-thinking-stream", "deepseek-v4-flash", "prompt", 0, true, false, []string{"read_file"}, nil, nil)
+
+	frames, done := parseSSEDataFrames(t, rec.Body.String())
+	if !done {
+		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
+	}
+	if !streamHasToolCallsDelta(frames) {
+		t.Fatalf("expected tool_calls delta promoted from visible thinking, body=%s", rec.Body.String())
+	}
+	if streamFinishReason(frames) != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, body=%s", rec.Body.String())
+	}
+}
+
 func TestHandleStreamPromotesHiddenThinkingDSMLToolCallsOnFinalize(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(

@@ -135,6 +135,7 @@ async function handleVercelStream(req, res, rawBody, payload) {
     const created = Math.floor(Date.now() / 1000);
     let currentType = thinkingEnabled ? 'thinking' : 'text';
     let thinkingText = '';
+    let detectionThinkingText = '';
     let outputText = '';
     let usagePrompt = finalPrompt;
     const toolSieveEnabled = toolPolicy.toolSieveEnabled;
@@ -165,7 +166,11 @@ async function handleVercelStream(req, res, rawBody, payload) {
         return true;
       }
       deltaCoalescer.flush();
-      const detected = parseStandaloneToolCalls(outputText, toolNames);
+      let detected = parseStandaloneToolCalls(outputText, toolNames);
+      if (detected.length === 0 && detectionThinkingText) {
+        // 正文无工具块时，回退扫描思考流缓冲（think-only 工具调用形态）。
+        detected = parseStandaloneToolCalls(detectionThinkingText, toolNames);
+      }
       if (detected.length > 0 && !toolCallsDoneEmitted) {
         toolCallsEmitted = true;
         toolCallsDoneEmitted = true;
@@ -280,6 +285,18 @@ async function handleVercelStream(req, res, rawBody, payload) {
             if (parsed.finished) {
               streamEnded = true;
               break;
+            }
+
+            // think 增量恒进检测缓冲（与 Go 侧 DetectionThinking 语义一致），
+            // 供 finalize 提升思考流里的 DSML 工具调用。
+            for (const p of parsed.detectionParts || []) {
+              if (!p.text) {
+                continue;
+              }
+              const det = trimContinuationOverlap(detectionThinkingText, p.text);
+              if (det) {
+                detectionThinkingText += det;
+              }
             }
 
             for (const p of parsed.parts) {
