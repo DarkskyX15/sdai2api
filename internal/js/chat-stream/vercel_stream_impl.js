@@ -1,6 +1,10 @@
 'use strict';
 
-// Implementation moved here to keep the line-gate wrapper tiny.
+// Vercel Node 流式桥实现（SDAI 上游）。
+//
+// 流程：Go 侧 /__stream_prepare 完成鉴权与 payload 构建 → Node 直连
+// SDAI chat/start 消费 SSE → 转译为 OpenAI chat.completion.chunk 输出。
+// SDAI 无 PoW/continue 端点；空输出重试使用全新 uuid + 原始归一化上下文。
 
 const {
   createToolSieveState,
@@ -9,9 +13,9 @@ const {
   parseStandaloneToolCalls,
   formatOpenAIStreamToolCalls,
 } = require('../helpers/stream-tool-sieve');
-const { BASE_HEADERS } = require('../shared/deepseek-constants');
+const { SDAI_CHAT_START_URL, BASE_HEADERS } = require('../shared/deepseek-constants');
 const { writeOpenAIError, openAIErrorType } = require('./error_shape');
-const { parseChunkForContent, isCitation } = require('./sse_parse');
+const { parseChunkForContent } = require('./sse_parse');
 const { buildUsage } = require('./token_usage');
 const {
   resolveToolcallPolicy,
@@ -24,7 +28,6 @@ const {
   asString,
   isAbortError,
   fetchStreamPrepare,
-  fetchStreamPow,
   fetchStreamSwitch,
   relayPreparedFailure,
   createLeaseReleaser,
@@ -33,11 +36,8 @@ const {
   trimContinuationOverlap,
 } = require('./dedupe');
 
-const DEEPSEEK_COMPLETION_URL = 'https://chat.deepseek.com/api/v0/chat/completion';
-const DEEPSEEK_CONTINUE_URL = 'https://chat.deepseek.com/api/v0/chat/continue';
 const EMPTY_OUTPUT_RETRY_SUFFIX = 'Previous reply had no visible output. Please regenerate the visible final answer or tool call now.';
 const EMPTY_OUTPUT_RETRY_MAX_ATTEMPTS = 1;
-const AUTO_CONTINUE_MAX_ROUNDS = 8;
 
 async function handleVercelStream(req, res, rawBody, payload) {
   const prep = await fetchStreamPrepare(req, rawBody);
@@ -49,18 +49,16 @@ async function handleVercelStream(req, res, rawBody, payload) {
   const model = asString(prep.body.model) || asString(payload.model);
   const responseID = asString(prep.body.session_id) || `chatcmpl-${Date.now()}`;
   const leaseID = asString(prep.body.lease_id);
-  let deepseekToken = asString(prep.body.deepseek_token);
-  const initialPowHeader = asString(prep.body.pow_header);
+  let upstreamToken = asString(prep.body.deepseek_token);
   let completionPayload = prep.body.payload && typeof prep.body.payload === 'object' ? prep.body.payload : null;
   const finalPrompt = asString(prep.body.final_prompt);
   const thinkingEnabled = toBool(prep.body.thinking_enabled);
-  const searchEnabled = toBool(prep.body.search_enabled);
   const toolPolicy = resolveToolcallPolicy(prep.body, payload.tools);
   const toolNames = toolPolicy.toolNames;
   const emitEarlyToolDeltas = toolPolicy.emitEarlyToolDeltas;
   const stripReferenceMarkers = true;
 
-  if (!model || !leaseID || !deepseekToken || !initialPowHeader || !completionPayload) {
+  if (!model || !leaseID || !upstreamToken || !completionPayload) {
     writeOpenAIError(res, 500, 'invalid vercel prepare response');
     return;
   }
@@ -89,39 +87,14 @@ async function handleVercelStream(req, res, rawBody, payload) {
   res.on('close', onResClose);
 
   try {
-    let currentPowHeader = initialPowHeader;
-    const refreshPowHeader = async (roundType) => {
+    const fetchSDAIStream = async (bodyPayload) => {
       try {
-        const pow = await fetchStreamPow(req, leaseID);
-        const nextPowHeader = asString(pow.body && pow.body.pow_header);
-        if (pow.ok && nextPowHeader) {
-          currentPowHeader = nextPowHeader;
-          return currentPowHeader;
-        }
-        console.warn('[vercel_stream_pow] refresh failed, reusing previous PoW', {
-          round_type: roundType,
-          status: pow.status || 0,
-        });
-      } catch (err) {
-        if (clientClosed || isAbortError(err)) {
-          return '';
-        }
-        console.warn('[vercel_stream_pow] refresh failed, reusing previous PoW', {
-          round_type: roundType,
-          error: err,
-        });
-      }
-      return currentPowHeader;
-    };
-
-    const fetchDeepSeekStream = async (url, bodyPayload, powHeader) => {
-      try {
-        return await fetch(url, {
+        return await fetch(SDAI_CHAT_START_URL, {
           method: 'POST',
           headers: {
             ...BASE_HEADERS,
-            authorization: `Bearer ${deepseekToken}`,
-            'x-ds-pow-response': powHeader,
+            accept: 'text/event-stream',
+            authorization: `Bearer ${upstreamToken}`,
           },
           body: JSON.stringify(bodyPayload),
           signal: upstreamController.signal,
@@ -133,19 +106,7 @@ async function handleVercelStream(req, res, rawBody, payload) {
         throw err;
       }
     };
-    const fetchCompletion = (bodyPayload) => fetchDeepSeekStream(DEEPSEEK_COMPLETION_URL, bodyPayload, currentPowHeader);
-    let activeDeepSeekSessionID = responseID;
-    const fetchContinue = async (messageID) => {
-      const powHeader = await refreshPowHeader('continue');
-      if (!powHeader) {
-        return null;
-      }
-      return fetchDeepSeekStream(DEEPSEEK_CONTINUE_URL, {
-        chat_session_id: activeDeepSeekSessionID,
-        message_id: messageID,
-        fallback_to_resume: true,
-      }, powHeader);
-    };
+    const fetchCompletion = (bodyPayload) => fetchSDAIStream(bodyPayload);
 
     let completionRes = await fetchCompletion(completionPayload);
     if (completionRes === null) {
@@ -262,155 +223,134 @@ async function handleVercelStream(req, res, rawBody, payload) {
     };
 
     const processStream = async (initialResponse, allowDeferEmpty) => {
-      let currentResponse = initialResponse;
-      let continueState = createContinueState(activeDeepSeekSessionID);
-      let continueRounds = 0;
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        reader = currentResponse.body.getReader();
-        buffered = '';
-        let streamEnded = false;
-        try {
-          // eslint-disable-next-line no-constant-condition
-          while (true) {
-            if (clientClosed) {
-              await finish('stop');
-              return { terminal: true, retryable: false };
+      const reader = initialResponse.body.getReader();
+      let upstreamResponseMessageID = 0;
+      buffered = '';
+      let streamEnded = false;
+      try {
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          if (clientClosed) {
+            await finish('stop');
+            return { terminal: true, retryable: false };
+          }
+          const { value, done } = await reader.read();
+          if (done) {
+            break;
+          }
+          buffered += decoder.decode(value, { stream: true });
+          const lines = buffered.split('\n');
+          buffered = lines.pop() || '';
+
+          for (const rawLine of lines) {
+            const line = rawLine.trim();
+            if (!line.startsWith('data:')) {
+              continue;
             }
-            const { value, done } = await reader.read();
-            if (done) {
+            const dataStr = line.slice(5).trim();
+            if (!dataStr) {
+              continue;
+            }
+            if (dataStr === 'DONE') {
+              // SDAI 正常结束信号（event: flag / data: DONE）。
+              streamEnded = true;
               break;
             }
-            buffered += decoder.decode(value, { stream: true });
-            const lines = buffered.split('\n');
-            buffered = lines.pop() || '';
+            let chunk;
+            try {
+              chunk = JSON.parse(dataStr);
+            } catch (_err) {
+              continue;
+            }
+            const parsed = parseChunkForContent(chunk, thinkingEnabled, currentType, stripReferenceMarkers);
+            if (!parsed.parsed) {
+              continue;
+            }
+            if (parsed.responseMessageID > 0) {
+              upstreamResponseMessageID = parsed.responseMessageID;
+              continue;
+            }
+            currentType = parsed.newType;
+            if (parsed.errorMessage) {
+              return { terminal: await finish('content_filter'), retryable: false };
+            }
+            if (parsed.contentFilter) {
+              return { terminal: await finish(outputText.trim() === '' ? 'content_filter' : 'stop'), retryable: false };
+            }
+            if (parsed.finished) {
+              streamEnded = true;
+              break;
+            }
 
-            for (const rawLine of lines) {
-              const line = rawLine.trim();
-              if (!line.startsWith('data:')) {
+            for (const p of parsed.parts) {
+              if (!p.text) {
                 continue;
               }
-              const dataStr = line.slice(5).trim();
-              if (!dataStr) {
-                continue;
-              }
-              if (dataStr === '[DONE]') {
-                streamEnded = true;
-                break;
-              }
-              let chunk;
-              try {
-                chunk = JSON.parse(dataStr);
-              } catch (_err) {
-                continue;
-              }
-              observeContinueState(continueState, chunk);
-              const parsed = parseChunkForContent(chunk, thinkingEnabled, currentType, stripReferenceMarkers);
-              if (!parsed.parsed) {
-                continue;
-              }
-              currentType = parsed.newType;
-              if (parsed.errorMessage) {
-                return { terminal: await finish('content_filter'), retryable: false };
-              }
-              if (parsed.contentFilter) {
-                return { terminal: await finish(outputText.trim() === '' ? 'content_filter' : 'stop'), retryable: false };
-              }
-              if (parsed.finished) {
-                streamEnded = true;
-                break;
-              }
-
-              for (const p of parsed.parts) {
-                if (!p.text) {
-                  continue;
-                }
-                if (p.type === 'thinking') {
-                  if (thinkingEnabled) {
-                    const trimmed = trimContinuationOverlap(thinkingText, p.text);
-                    if (!trimmed) {
-                      continue;
-                    }
-                    thinkingText += trimmed;
-                    deltaCoalescer.append('reasoning_content', trimmed);
-                  }
-                } else {
-                  const trimmed = trimContinuationOverlap(outputText, p.text);
+              if (p.type === 'thinking') {
+                if (thinkingEnabled) {
+                  const trimmed = trimContinuationOverlap(thinkingText, p.text);
                   if (!trimmed) {
                     continue;
                   }
-                  if (searchEnabled && isCitation(trimmed)) {
-                    continue;
-                  }
-                  outputText += trimmed;
-                  if (!toolSieveEnabled) {
-                    deltaCoalescer.append('content', trimmed);
-                    continue;
-                  }
-                  const events = processToolSieveChunk(toolSieveState, trimmed, toolNames);
-                  for (const evt of events) {
-                    if (evt.type === 'tool_call_deltas') {
-                      if (!emitEarlyToolDeltas) {
-                        continue;
-                      }
-                      const filtered = filterIncrementalToolCallDeltasByAllowed(evt.deltas, toolNames, streamToolNames);
-                      const formatted = formatIncrementalToolCallDeltas(filtered, streamToolCallIDs);
-                      if (formatted.length > 0) {
-                        toolCallsEmitted = true;
-                        deltaCoalescer.flush();
-                        sendDeltaFrame({ tool_calls: formatted });
-                      }
+                  thinkingText += trimmed;
+                  deltaCoalescer.append('reasoning_content', trimmed);
+                }
+              } else {
+                const trimmed = trimContinuationOverlap(outputText, p.text);
+                if (!trimmed) {
+                  continue;
+                }
+                outputText += trimmed;
+                if (!toolSieveEnabled) {
+                  deltaCoalescer.append('content', trimmed);
+                  continue;
+                }
+                const events = processToolSieveChunk(toolSieveState, trimmed, toolNames);
+                for (const evt of events) {
+                  if (evt.type === 'tool_call_deltas') {
+                    if (!emitEarlyToolDeltas) {
                       continue;
                     }
-                    if (evt.type === 'tool_calls') {
+                    const filtered = filterIncrementalToolCallDeltasByAllowed(evt.deltas, toolNames, streamToolNames);
+                    const formatted = formatIncrementalToolCallDeltas(filtered, streamToolCallIDs);
+                    if (formatted.length > 0) {
                       toolCallsEmitted = true;
-                      toolCallsDoneEmitted = true;
                       deltaCoalescer.flush();
-                      sendDeltaFrame({ tool_calls: formatOpenAIStreamToolCalls(evt.calls, streamToolCallIDs, payload.tools) });
-                      resetStreamToolCallState(streamToolCallIDs, streamToolNames);
-                      continue;
+                      sendDeltaFrame({ tool_calls: formatted });
                     }
-                    if (evt.text) {
-                      deltaCoalescer.append('content', evt.text);
-                    }
+                    continue;
+                  }
+                  if (evt.type === 'tool_calls') {
+                    toolCallsEmitted = true;
+                    toolCallsDoneEmitted = true;
+                    deltaCoalescer.flush();
+                    sendDeltaFrame({ tool_calls: formatOpenAIStreamToolCalls(evt.calls, streamToolCallIDs, payload.tools) });
+                    resetStreamToolCallState(streamToolCallIDs, streamToolNames);
+                    continue;
+                  }
+                  if (evt.text) {
+                    deltaCoalescer.append('content', evt.text);
                   }
                 }
-              }
-              if (streamEnded) {
-                break;
               }
             }
             if (streamEnded) {
               break;
             }
           }
-        } catch (err) {
-          if (clientClosed || isAbortError(err)) {
-            await finish('stop');
-            return { terminal: true, retryable: false };
+          if (streamEnded) {
+            break;
           }
-          await finish('stop');
-          return { terminal: true, retryable: false };
         }
-
-        if (shouldAutoContinue(continueState) && continueRounds < AUTO_CONTINUE_MAX_ROUNDS) {
-          continueRounds += 1;
-          const nextRes = await fetchContinue(continueState.responseMessageID);
-          if (nextRes === null) {
-            return { terminal: true, retryable: false };
-          }
-          if (!nextRes.ok || !nextRes.body) {
-            return { terminal: await finish('stop'), retryable: false };
-          }
-          continueState = prepareContinueStateForNextRound(continueState);
-          currentResponse = nextRes;
-          continue;
-        }
-        break;
+      } catch (err) {
+        // 客户端断连或上游异常：SDAI 无 continue 能力，按终态处理。
+        void err;
+        await finish('stop');
+        return { terminal: true, retryable: false };
       }
 
       const terminal = await finish('stop', { deferEmpty: allowDeferEmpty });
-      return { terminal, retryable: !terminal && allowDeferEmpty, responseMessageID: continueState.responseMessageID };
+      return { terminal, retryable: !terminal && allowDeferEmpty, responseMessageID: upstreamResponseMessageID };
     };
 
     let retryAttempts = 0;
@@ -432,9 +372,7 @@ async function handleVercelStream(req, res, rawBody, payload) {
           const switched = await fetchStreamSwitch(req, leaseID);
           if (switched.ok && switched.body && switched.body.payload && typeof switched.body.payload === 'object') {
             completionPayload = switched.body.payload;
-            deepseekToken = asString(switched.body.deepseek_token) || deepseekToken;
-            currentPowHeader = asString(switched.body.pow_header) || currentPowHeader;
-            activeDeepSeekSessionID = asString(switched.body.session_id) || activeDeepSeekSessionID;
+            upstreamToken = asString(switched.body.deepseek_token) || upstreamToken;
             usagePrompt = finalPrompt;
             completionRes = await fetchCompletion(completionPayload);
             if (completionRes === null) {
@@ -455,17 +393,12 @@ async function handleVercelStream(req, res, rawBody, payload) {
         surface: 'chat.completions',
         stream: true,
         retry_attempt: retryAttempts,
-        parent_message_id: processed.responseMessageID || 0,
       });
       usagePrompt = usagePromptWithEmptyOutputRetry(finalPrompt, retryAttempts);
-      const retryPowHeader = await refreshPowHeader('retry');
-      if (!retryPowHeader) {
-        return;
-      }
-      completionRes = await fetchDeepSeekStream(
-        DEEPSEEK_COMPLETION_URL,
-        clonePayloadForEmptyOutputRetry(completionPayload, processed.responseMessageID),
-        retryPowHeader,
+      // SDAI：fresh retry 使用全新 uuid（Go prepare/switch 端点已注入 payload），
+      // 无 parent_message_id 语义。
+      completionRes = await fetchCompletion(
+        clonePayloadForEmptyOutputRetry(completionPayload),
       );
       if (completionRes === null) {
         return;
@@ -486,15 +419,11 @@ function toBool(v) {
   return v === true;
 }
 
-function clonePayloadForEmptyOutputRetry(payload, parentMessageID) {
-  const clone = {
+function clonePayloadForEmptyOutputRetry(payload) {
+  return {
     ...(payload || {}),
-    prompt: appendEmptyOutputRetrySuffix(asString(payload && payload.prompt)),
+    content: appendEmptyOutputRetrySuffix(asString(payload && payload.content)),
   };
-  if (parentMessageID && parentMessageID > 0) {
-    clone.parent_message_id = parentMessageID;
-  }
-  return clone;
 }
 
 function appendEmptyOutputRetrySuffix(prompt) {
@@ -516,141 +445,6 @@ function usagePromptWithEmptyOutputRetry(originalPrompt, attempts) {
     parts.push(next);
   }
   return parts.join('\n');
-}
-
-function createContinueState(sessionID) {
-  return {
-    sessionID: asString(sessionID),
-    responseMessageID: 0,
-    lastStatus: '',
-    finished: false,
-  };
-}
-
-function prepareContinueStateForNextRound(state) {
-  return {
-    ...state,
-    lastStatus: '',
-    finished: false,
-  };
-}
-
-function observeContinueState(state, chunk) {
-  if (!state || !chunk || typeof chunk !== 'object') {
-    return;
-  }
-  const topID = numberValue(chunk.response_message_id);
-  if (topID > 0) {
-    state.responseMessageID = topID;
-  }
-  observeContinueDirectPatch(state, chunk.p, chunk.v);
-  if (chunk.p === 'response') {
-    observeContinueBatchPatches(state, 'response', chunk.v);
-  } else {
-    observeContinueBatchPatches(state, '', chunk.v);
-  }
-  const response = chunk.v && typeof chunk.v === 'object' ? chunk.v.response : null;
-  observeContinueResponseObject(state, response);
-  const messageResponse = chunk.message && typeof chunk.message === 'object' && chunk.message.response;
-  observeContinueResponseObject(state, messageResponse);
-}
-
-function observeContinueDirectPatch(state, path, value) {
-  if (!state) {
-    return;
-  }
-  switch (asString(path).trim().replace(/^\/+|\/+$/g, '')) {
-    case 'response/status':
-    case 'status':
-    case 'response/quasi_status':
-    case 'quasi_status':
-      setContinueStatus(state, asString(value));
-      break;
-    case 'response/auto_continue':
-    case 'auto_continue':
-      if (value === true) {
-        state.lastStatus = 'AUTO_CONTINUE';
-      }
-      break;
-    default:
-      break;
-  }
-}
-
-function observeContinueResponseObject(state, response) {
-  if (!state || !response || typeof response !== 'object') {
-    return;
-  }
-  const id = numberValue(response.message_id);
-  if (id > 0) {
-    state.responseMessageID = id;
-  }
-  setContinueStatus(state, asString(response.status));
-  if (response.auto_continue === true) {
-    state.lastStatus = 'AUTO_CONTINUE';
-  }
-}
-
-function observeContinueBatchPatches(state, parentPath, raw) {
-  if (!state || !Array.isArray(raw)) {
-    return;
-  }
-  for (const patch of raw) {
-    if (!patch || typeof patch !== 'object') {
-      continue;
-    }
-    const path = asString(patch.p).trim();
-    if (!path) {
-      continue;
-    }
-    let fullPath = path;
-    const parent = asString(parentPath).trim().replace(/^\/+|\/+$/g, '');
-    if (parent && !path.includes('/')) {
-      fullPath = `${parent}/${path}`;
-    }
-    switch (fullPath.replace(/^\/+|\/+$/g, '')) {
-      case 'response/status':
-      case 'status':
-      case 'response/quasi_status':
-      case 'quasi_status':
-        setContinueStatus(state, asString(patch.v));
-        break;
-      case 'response/auto_continue':
-      case 'auto_continue':
-        if (patch.v === true) {
-          state.lastStatus = 'AUTO_CONTINUE';
-        }
-        break;
-      default:
-        break;
-    }
-  }
-}
-
-function setContinueStatus(state, status) {
-  const normalized = asString(status).trim();
-  if (!normalized) {
-    return;
-  }
-  state.lastStatus = normalized;
-  if (['FINISHED', 'CONTENT_FILTER'].includes(normalized.toUpperCase())) {
-    state.finished = true;
-  }
-}
-
-function shouldAutoContinue(state) {
-  if (!state || state.finished || !state.sessionID || state.responseMessageID <= 0) {
-    return false;
-  }
-  return ['INCOMPLETE', 'AUTO_CONTINUE'].includes(asString(state.lastStatus).trim().toUpperCase());
-}
-
-function numberValue(v) {
-  if (typeof v === 'number' && Number.isFinite(v)) {
-    return Math.trunc(v);
-  }
-  const parsed = Number.parseInt(asString(v), 10);
-  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function upstreamEmptyOutputDetail(contentFilter, _text, thinking) {

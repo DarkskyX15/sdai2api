@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const chatStream = require('../../api/chat-stream.js');
-const deepseekConstants = require('../../internal/js/shared/deepseek-constants.js');
+const sdaiConstants = require('../../internal/js/shared/deepseek-constants.js');
 const { parseToolCallsDetailed, parseStandaloneToolCallsDetailed } = require('../../internal/js/helpers/stream-tool-sieve.js');
 
 const { parseChunkForContent, estimateTokens } = chatStream.__test;
@@ -17,13 +17,12 @@ function readJSON(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
-test('js shared constants derive client headers from shared json', () => {
-  const shared = readJSON(path.resolve(__dirname, '../../internal/deepseek/protocol/constants_shared.json'));
-  const client = shared.client;
-  assert.equal(deepseekConstants.CLIENT_VERSION, client.version);
-  assert.equal(deepseekConstants.BASE_HEADERS['x-client-version'], client.version);
-  assert.equal(deepseekConstants.BASE_HEADERS['User-Agent'], `${client.name}/${client.version} Android/${client.android_api_level}`);
-  assert.equal(deepseekConstants.BASE_HEADERS['Content-Type'], 'application/json');
+test('js shared constants expose SDAI base headers', () => {
+  assert.equal(sdaiConstants.SDAI_HOST, 'sdai.suda.edu.cn');
+  assert.equal(sdaiConstants.BASE_HEADERS['Content-Type'], 'application/json');
+  assert.equal(sdaiConstants.BASE_HEADERS.Referer, sdaiConstants.SDAI_CHAT_START_REFERER);
+  assert.ok(sdaiConstants.BASE_HEADERS['User-Agent'].includes('Mozilla/5.0'));
+  assert.equal(sdaiConstants.SDAI_CHAT_START_URL, 'https://sdai.suda.edu.cn/backend/api/chat/start');
 });
 
 test('js compat: sse fixtures', () => {

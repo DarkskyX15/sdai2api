@@ -5,11 +5,8 @@ const {
 } = require('./error_shape');
 const {
   parseChunkForContent,
-  extractContentRecursive,
-  filterLeakedContentFilterParts,
-  hasContentFilterStatus,
-  extractAccumulatedTokenUsage,
-  shouldSkipPath,
+  extractResponseMessageID,
+  isCitation,
   stripReferenceMarkers,
 } = require('./sse_parse');
 const {
@@ -107,8 +104,8 @@ module.exports = handler;
 
 module.exports.__test = {
   parseChunkForContent,
-  extractContentRecursive,
-  shouldSkipPath,
+  extractResponseMessageID,
+  isCitation,
   stripReferenceMarkers,
   asString,
   resolveToolcallPolicy,
@@ -119,9 +116,6 @@ module.exports.__test = {
   resetStreamToolCallState,
   estimateTokens,
   buildUsage,
-  filterLeakedContentFilterParts,
-  hasContentFilterStatus,
-  extractAccumulatedTokenUsage,
   isNodeStreamSupportedPath,
   extractPathname,
   trimContinuationOverlap,
