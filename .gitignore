@@ -11,6 +11,10 @@ config.json
 .DS_Store
 opencode.json
 
+# Local agent tooling data
+.codebuddy/
+.opencode/
+
 # Logs
 *.log
 logs/
