@@ -64,6 +64,9 @@ CLAUDE.local.md
 # Local tool bootstrap cache
 .tmp/
 
+# Local probe experiments (contain credentials)
+.local/
+
 # Chat history
 data/
 .codex

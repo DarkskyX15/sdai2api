@@ -4,6 +4,12 @@
 
 本文档描述当前 Go 代码库的实际 API 行为。
 
+> **上游已切换为 SDAI（sdai.suda.edu.cn）**，本文中个别章节仍保留 DeepSeek 时代描述（标注“历史”）的部分以下述变更为准：
+> 1. **鉴权**：账号凭据为 `accounts[].token`（SDAI Bearer token 直配），无自动登录/刷新；直通 token 模式语义不变（非 keys 凭据直接作为 SDAI token）。
+> 2. **模型表**：更换为 SDAI 模型（`deepseek-v4-flash`=10、`deepseek-v4-pro`=8、`deepseek-v3.2`=9、`deepseek-v3-1-terminus`=7、`deepseek-r1`=2、`doubao-1-5-pro-32k-250115`=6），`-search`/`-vision` 变体不再提供，`-nothinking` 语义保留（强制 `think:0`）。
+> 3. **auto_delete**：`single`=DELETE `/msg_title/del`；`all`=会话列表翻页逐个删除（**含网页端真实对话**）。
+> 4. **文件接口**：`/v1/files` 与 inline file/image 输入返回 `501`（上游无上传端点）。
+
 文档导航：[总览](README.MD) / [架构说明](docs/ARCHITECTURE.md) / [部署指南](docs/DEPLOY.md) / [测试指南](docs/TESTING.md)
 
 ---
@@ -86,7 +92,7 @@ Vercel 一键部署可先只填 `DS2API_ADMIN_KEY`，部署后在 `/admin` 导�
 - token 在 `config.keys` 中 → **托管账号模式**，自动轮询选择账号
 - token 不在 `config.keys` 中 → **直通 token 模式**，直接作为 DeepSeek token 使用
 
-**可选请求头**：`X-Ds2-Target-Account: <email_or_mobile>` — 指定使用某个托管账号；如果目标账号不存在，或管理账号队列已耗尽，相关业务请求会返回 `429`，当前不会附带 `Retry-After` 头。若账号存在但登录/刷新失败，则返回对应的 `401` 或上游错误。未指定目标账号时，托管账号模式的 completion 空输出 429 会先尝试切到另一个可用账号 fresh retry 一次；指定目标账号或无其他可用账号时不会切号。
+**可选请求头**：`X-Ds2-Target-Account: <identifier>` — 指定使用某个托管账号（标识为账号 `email`/`name`，或 token-only 账号的合成标识 `token:<hash>`）；如果目标账号不存在，或管理账号队列已耗尽，相关业务请求会返回 `429`，当前不会附带 `Retry-After` 头。若账号 token 失效，则返回对应的 `401` 或上游错误。未指定目标账号时，托管账号模式的 completion 空输出 429 会先尝试切到另一个可用账号 fresh retry 一次；指定目标账号或无其他可用账号时不会切号。
 Gemini 兼容客户端还可以使用 `x-goog-api-key`、`?key=` 或 `?api_key=` 作为凭据来源。
 
 ### Admin 接口（`/admin/*`）

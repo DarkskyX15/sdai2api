@@ -17,7 +17,9 @@
 
 语言 / Language: [中文](README.MD) | [English](README.en.md)
 
-将 DeepSeek Web 对话能力转换为 OpenAI、Claude 与 Gemini 兼容 API。核心后端以 **Go** 实现，Vercel 流式桥接额外使用少量 Node Runtime，前端为 React WebUI 管理台（源码在 `webui/`，部署时自动构建到 `static/admin`）。
+将 **SDAI**（sdai.suda.edu.cn 网页对话，前身为 DeepSeek Web 逆向）转换为 OpenAI、Claude 与 Gemini 兼容 API。核心后端以 **Go** 实现，Vercel 流式桥接额外使用少量 Node Runtime，前端为 React WebUI 管理台（源码在 `webui/`，部署时自动构建到 `static/admin`）。
+
+> **上游迁移说明**：本版本已从 DeepSeek 网页版切换到 SDAI 网页对话通道。账号凭据改为 Bearer token 直配（无自动登录/PoW/文件上传/自动续写），模型表更换为 SDAI 数字 ID 模型。从旧版本迁移只需把 `accounts[].email/password` 替换为 `accounts[].token`。
 
 文档入口：[文档导航](docs/README.md) / [架构说明](docs/ARCHITECTURE.md) / [接口文档](API.md)
 
@@ -136,9 +138,9 @@ flowchart LR
 | Gemini 兼容 | `POST /v1beta/models/{model}:generateContent`、`POST /v1beta/models/{model}:streamGenerateContent`（及 `/v1/models/{model}:*` 路径） |
 | Ollama 兼容 | `GET /api/version`、`GET /api/tags`、`POST /api/show` |
 | 统一 CORS 兼容 | `/v1/*`、`/anthropic/*`、`/v1beta/models/*`、`/api/*`、`/admin/*` 统一走同一套 CORS 策略；Vercel 上 `/v1/chat/completions` 的 Node Runtime 也对齐相同放行规则，尽量减少第三方预检请求头限制 |
-| 多账号轮询 | 自动 token 刷新、邮箱/手机号双登录方式 |
+| 多账号轮询 | 账号以 SDAI Bearer token 直配，无自动登录/刷新（token 失效即切号） |
 | 并发队列控制 | 每账号 in-flight 上限 + 等待队列，动态计算建议并发值 |
-| DeepSeek PoW | 纯 Go 高性能实现（DeepSeekHashV1），毫秒级响应 |
+| 上游对接 | SDAI（sdai.suda.edu.cn 网页对话通道）：裸 Bearer、无 PoW、无 TLS 指纹伪装 |
 | Tool Calling | 防泄漏处理：非代码块高置信特征识别、`delta.tool_calls` 早发、结构化增量输出 |
 | Admin API | 配置管理、运行时设置热更新、代理管理、账号测试 / 批量测试、会话清理、导入导出、Vercel 同步、版本检查 |
 | WebUI 管理台 | `/admin` 单页应用（中英文双语、深色模式，支持查看服务器端对话记录） |
@@ -161,21 +163,20 @@ OpenAI `/v1/*` 仍是推荐的规范路径；同时支持 `/models`、`/chat/com
 
 ### OpenAI 接口（`GET /v1/models`）
 
-| 模型类型 | 模型 ID | thinking | search |
+| 模型类型 | 模型 ID | 上游 model_id | thinking |
 | --- | --- | --- | --- |
-| default | `deepseek-v4-flash` | 默认开启，可由请求参数控制 | ❌ |
-| default | `deepseek-v4-flash-nothinking` | 永久关闭，不受请求参数影响 | ❌ |
-| expert | `deepseek-v4-pro` | 默认开启，可由请求参数控制 | ❌ |
-| expert | `deepseek-v4-pro-nothinking` | 永久关闭，不受请求参数影响 | ❌ |
-| default | `deepseek-v4-flash-search` | 默认开启，可由请求参数控制 | ✅ |
-| default | `deepseek-v4-flash-search-nothinking` | 永久关闭，不受请求参数影响 | ✅ |
-| expert | `deepseek-v4-pro-search` | 默认开启，可由请求参数控制 | ✅ |
-| expert | `deepseek-v4-pro-search-nothinking` | 永久关闭，不受请求参数影响 | ✅ |
-| vision | `deepseek-v4-vision` | 默认开启，可由请求参数控制 | ❌ |
-| vision | `deepseek-v4-vision-nothinking` | 永久关闭，不受请求参数影响 | ❌ |
+| default | `deepseek-v4-flash` | 10 | 默认开启，可由请求参数控制 |
+| default | `deepseek-v4-flash-nothinking` | 10 | 永久关闭（`think:0`） |
+| default | `deepseek-v4-pro` | 8 | 默认开启，可由请求参数控制 |
+| default | `deepseek-v4-pro-nothinking` | 8 | 永久关闭（`think:0`） |
+| default | `deepseek-v3.2` | 9 | 可由请求参数控制 |
+| default | `deepseek-v3-1-terminus` | 7 | 可由请求参数控制 |
+| default | `deepseek-r1` | 2 | 恒开（上游强制） |
+| default | `doubao-1-5-pro-32k-250115` | 6 | 不支持思考 |
 
-除原生模型外，也支持常见 alias 输入（如 `gpt-4.1`、`gpt-5`、`gpt-5-codex`、`o3`、`claude-*`、`gemini-*` 等），但 `/v1/models` 返回的是规范化后的 DeepSeek 原生模型 ID。若 alias 名本身追加 `-nothinking` 后缀，也会映射到对应的强制关思考模型。完整 alias 行为以 [API.md](API.md#模型-alias-解析策略) 和 `config.example.json` 为准。
-当前上游视觉模型只暴露 `vision` 通道，不提供独立的联网搜索视觉变体。
+除原生模型外，也支持常见 alias 输入（如 `gpt-4.1`、`gpt-5`、`gpt-5-codex`、`o3`、`claude-*`、`gemini-*` 等），但 `/v1/models` 返回的是规范化后的 SDAI 模型 ID。若 alias 名本身追加 `-nothinking` 后缀，也会映射到对应的强制关思考模型。完整 alias 行为以 [API.md](API.md#模型-alias-解析策略) 和 `config.example.json` 为准。
+
+> SDAI 上游无联网搜索通道：旧 `-search` 系列模型 ID 不再注册；无文件上传端点：`/v1/files` 与 inline file/image 输入返回 501。`content` 上限约 65535 字节（约 2 万汉字），超限请求会被预校验拒绝。
 
 ### Claude 接口（`GET /anthropic/v1/models`）
 
@@ -330,12 +331,11 @@ go run ./cmd/ds2api
 常用字段：
 
 - `keys` / `api_keys`：客户端访问密钥，`api_keys` 支持 `name` 与 `remark` 元信息，`keys` 继续兼容。
-- `accounts`：DeepSeek 托管账号，支持 `email` 或 `mobile` 登录，可配置代理、名称和备注。
+- `accounts`：SDAI 账号，`token` 为唯一必填凭据（浏览器登录 sdai.suda.edu.cn 后从请求头 `authorization: Bearer <token>` 复制）；`email` 仅作为可选标识，旧 `password`/`mobile` 字段不再用于登录（配置中存在时会打迁移警告）。可配置代理、名称和备注。
 - `model_aliases`：OpenAI / Claude / Gemini 共用的模型 alias 映射。
-- `runtime`：账号并发、队列与 token 刷新策略，可通过 Admin Settings 热更新。
-- `auto_delete.mode`：请求结束后的远端会话清理策略，支持 `none` / `single` / `all`。
-- `current_input_file`：全局生效的上下文拆分上传策略；默认开启且阈值为 `0`，触发时将完整上下文合并上传为 `DS2API_HISTORY.txt` 上下文文件。
-- 如果关闭 `current_input_file`，请求会直接透传，不上传拆分上下文文件。
+- `runtime`：账号并发与队列策略，可通过 Admin Settings 热更新（`token_refresh_interval_hours` 已废弃：SDAI 无自动刷新）。
+- `auto_delete.mode`：请求结束后的远端会话清理策略，支持 `none` / `single`（删本次会话）/ `all`（`GET msg_title/list` 翻页逐个 DELETE，**会连网页端真实对话一起删**）。
+- `current_input_file`：SDAI 无文件上传端点，字段保留但不再产生行为差异；长上下文直接走 `content` 透传（上限约 65535 字节）。
 - `thinking_injection`：默认开启；在最新 user 消息末尾追加思考增强提示词，提高高强度推理与工具调用前的思考稳定性；`prompt` 留空时使用内置默认提示词。
 
 环境变量完整列表见 [部署指南](docs/DEPLOY.md)，接口鉴权规则见 [API.md](API.md#鉴权规则)。
@@ -347,9 +347,9 @@ go run ./cmd/ds2api
 | 模式 | 说明 |
 | --- | --- |
 | **托管账号模式** | `Bearer` 或 `x-api-key` 传入 `config.keys` 中的 key，由服务自动轮询选择账号 |
-| **直通 token 模式** | 传入 token 不在 `config.keys` 中时，直接作为 DeepSeek token 使用 |
+| **直通 token 模式** | 传入 token 不在 `config.keys` 中时，直接作为 SDAI Bearer token 使用（调试新 token 的最快方式） |
 
-可选请求头 `X-Ds2-Target-Account`：指定使用某个托管账号（值为 email 或 mobile）。
+可选请求头 `X-Ds2-Target-Account`：指定使用某个托管账号（值为账号 `email`/`name` 标识）。
 如果指定账号不存在，或者当前管理账号队列已满，请求会返回 `429`；当前 `429` 不附带 `Retry-After` 头。若账号存在但登录/刷新失败，则返回对应的鉴权错误。
 未指定目标账号时，如果 completion 因上游 thinking-only 空输出在同账号补偿重试后仍将返回 `429 upstream_empty_output`，托管账号模式会自动切到下一个可用账号，新建 session，并用原始 payload 再 fresh retry 一次。
 Gemini 路由还可以使用 `x-goog-api-key`，或在没有认证头时使用 `?key=` / `?api_key=` 作为调用方凭据。

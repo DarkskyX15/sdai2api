@@ -2,23 +2,36 @@
 
 文档导航：[总览](../README.MD) / [架构说明](./ARCHITECTURE.md) / [接口文档](../API.md) / [测试指南](./TESTING.md)
 
-> 本文档是 DS2API“把 OpenAI / Claude / Gemini 风格 API 请求兼容成 DeepSeek 网页对话纯文本上下文”的专项说明。
+> 本文档是 DS2API“把 OpenAI / Claude / Gemini 风格 API 请求兼容成上游网页对话纯文本上下文”的专项说明。
 > 这是项目最重要的兼容产物之一。凡是修改消息标准化、tool prompt 注入、tool history 保留、文件引用、current input file、下游 completion payload 组装等行为，都必须同步更新本文档。
+
+> **上游已切换为 SDAI**（sdai.suda.edu.cn 网页对话）。归一化链路（promptcompat → StandardRequest → completionruntime）不变，仅下游 payload 组装与 SSE 解析边界变化：
+>
+> | DeepSeek（旧） | SDAI（现） |
+> |---|---|
+> | payload：`prompt` + `ref_file_ids` + `thinking_enabled`/`search_enabled` + `chat_session_id` | payload：`content`（纯文本上下文）+ `uuid`（一次性会话）+ `model_id`（数字）+ `think`（0/1）+ `from_uuid`/`kb_tid_list`（恒空） |
+> | 每请求 `CreateSession` 上游建会话 + PoW + 伪装头 + TLS 指纹 | 客户端本地生成 UUIDv4，裸 Bearer，无 PoW/指纹 |
+> | 上下文超长 → 上传 `DS2API_HISTORY.txt` 文件引用 | 无上传端点 → `current_input_file` 短路，content 直传（≈65535 字节上限，client 层预校验） |
+> | SSE fragments JSON（`p`/`v`/`o`） | SSE 三事件：`message`（`delta.type: think\|text`）、`finish`（`req_message_pk_id`）、`flag`（`DONE`）；未知事件（如 `cate`）容忍 |
+> | 空输出 fresh retry 附 `parent_message_id` | 无 parent 语义：新 uuid + content 追加重试后缀 |
+> | `content_filter`/citation 信号 | 无（相关判定已移除） |
+>
+> 归一化语义不变点：多轮 messages → 角色标记纯文本 transcript、tool 声明 → DSML system prompt、tool history 保留、thinking 注入、tool-call 检测与防泄漏、空输出重试、usage 统计——全部留在共享层。
 
 ## 1. 核心结论
 
 DS2API 当前的核心思路，不是把客户端传来的 `messages`、`tools`、`attachments` 原样转发给下游。
 
-而是把这些高层 API 语义，统一压缩成 DeepSeek 网页对话更容易理解的三类输入：
+而是把这些高层 API 语义，统一压缩成上游网页对话更容易理解的三类输入：
 
-1. `prompt`
+1. `content`（SDAI；旧 DeepSeek 为 `prompt`）
    一个单字符串，里面带有角色标记、system 指令、历史消息、assistant reasoning 标签、历史 tool call XML 等。
-2. `ref_file_ids`
-   一个文件引用数组，承载附件、inline 上传文件，以及必要时被拆出去的历史文件。
+2. 附件/文件引用
+   SDAI 无上传端点，inline 文件输入直接拒绝（501）；DeepSeek 时代的 `ref_file_ids` 与 `DS2API_HISTORY.txt` 拆分上传不再使用。
 3. 控制位
-   例如 `thinking_enabled`、`search_enabled`、部分 passthrough 参数。
+   `think`（0/1，映射 thinking 语义）；`model_id`（SDAI 数字模型 ID）。
 
-也就是说，项目最重要的兼容动作，是把“结构化 API 会话”翻译成“网页对话纯文本上下文 + 文件引用”。
+也就是说，项目最重要的兼容动作，是把“结构化 API 会话”翻译成“网页对话纯文本上下文”。
 
 ## 2. 为什么这是核心产物
 

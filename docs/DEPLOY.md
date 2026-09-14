@@ -436,11 +436,16 @@ DS2API_CHAT_HISTORY_PATH=/tmp/chat_history.json
 git clone https://github.com/CJackHwang/ds2api.git
 cd ds2api
 
+> **从旧版本（DeepSeek 上游）迁移**：账号凭据改为 `accounts[].token`（SDAI Bearer token），
+> 模型表更换为 SDAI 模型（`deepseek-v4-flash`=10、`deepseek-v4-pro`=8 等，`-search`/`-vision` 变体不再提供），
+> `current_input_file` 拆分上传不再生效（上游无文件端点），`runtime.token_refresh_interval_hours` 已废弃。
+
 # 复制并编辑配置
 cp config.example.json config.json
 # 使用你喜欢的编辑器打开 config.json，填入：
 #   - keys: 你的 API 访问密钥
-#   - accounts: DeepSeek 账号（email 或 mobile + password）
+#   - accounts: SDAI 账号（token 为唯一必填凭据；从浏览器 DevTools 的
+#     authorization: Bearer <token> 复制。旧 email/mobile/password 登录字段已废弃）
 
 # 启动服务
 go run ./cmd/ds2api

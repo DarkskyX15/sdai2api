@@ -4,6 +4,12 @@ Language: [中文](API.md) | [English](API.en.md)
 
 This document describes the actual behavior of the current Go codebase.
 
+> **Upstream switched to SDAI (sdai.suda.edu.cn)**. Some legacy DeepSeek-era sections below remain for reference; where they conflict, these changes apply:
+> 1. **Auth**: account credential is `accounts[].token` (SDAI Bearer token); no auto login/refresh. Passthrough token mode is unchanged.
+> 2. **Models**: SDAI numeric-ID models (`deepseek-v4-flash`=10, `deepseek-v4-pro`=8, `deepseek-v3.2`=9, `deepseek-v3-1-terminus`=7, `deepseek-r1`=2, `doubao-1-5-pro-32k-250115`=6). `-search`/`-vision` variants removed; `-nothinking` kept (forces `think:0`).
+> 3. **auto_delete**: `single` = DELETE `/msg_title/del`; `all` = page through the session list and delete each (includes real web-side conversations).
+> 4. **Files**: `/v1/files` and inline file/image input return `501` (no upstream upload endpoint).
+
 Docs: [Overview](README.en.md) / [Architecture](docs/ARCHITECTURE.en.md) / [Deployment](docs/DEPLOY.en.md) / [Testing](docs/TESTING.md)
 
 ---
