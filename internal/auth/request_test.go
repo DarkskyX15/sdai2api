@@ -1,12 +1,9 @@
 package auth
 
 import (
-	"context"
 	"errors"
 	"net/http"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"ds2api/internal/account"
 	"ds2api/internal/config"
@@ -14,15 +11,22 @@ import (
 
 func newTestResolver(t *testing.T) *Resolver {
 	t.Helper()
+	isolateTestConfigPath(t)
+	isolateTestConfigPath(t)
 	t.Setenv("DS2API_CONFIG_JSON", `{
 		"keys":["managed-key"],
-		"accounts":[{"email":"acc@example.com","password":"pwd","token":"account-token"}]
+		"accounts":[{"email":"acc@example.com","token":"account-token"}]
 	}`)
 	store := config.LoadStore()
 	pool := account.NewPool(store)
-	return NewResolver(store, pool, func(_ context.Context, _ config.Account) (string, error) {
-		return "fresh-token", nil
-	})
+	return NewResolver(store, pool)
+}
+
+// isolateTestConfigPath 防止本地 config.json 覆盖测试注入的 env 配置
+// （loadConfig 在 env writeback 开启时优先读取 DS2API_CONFIG_PATH 文件）。
+func isolateTestConfigPath(t *testing.T) {
+	t.Helper()
+	t.Setenv("DS2API_CONFIG_PATH", t.TempDir()+"/config.json")
 }
 
 func TestDetermineWithXAPIKeyUsesDirectToken(t *testing.T) {
@@ -61,7 +65,8 @@ func TestDetermineWithXAPIKeyManagedKeyAcquiresAccount(t *testing.T) {
 	if auth.AccountID != "acc@example.com" {
 		t.Fatalf("unexpected account id: %q", auth.AccountID)
 	}
-	if auth.DeepSeekToken != "fresh-token" {
+	// SDAI：token 直接来自账号配置，无登录/刷新。
+	if auth.DeepSeekToken != "account-token" {
 		t.Fatalf("unexpected account token: %q", auth.DeepSeekToken)
 	}
 	if auth.CallerID == "" {
@@ -197,128 +202,18 @@ func TestDetermineCallerMissingToken(t *testing.T) {
 	}
 }
 
-func TestDetermineManagedAccountForcesRefreshEverySixHours(t *testing.T) {
-	t.Setenv("DS2API_CONFIG_JSON", `{
-		"keys":["managed-key"],
-		"accounts":[{"email":"acc@example.com","password":"pwd","token":"seed-token"}]
-	}`)
-	store := config.LoadStore()
-	if err := store.UpdateAccountToken("acc@example.com", "seed-token"); err != nil {
-		t.Fatalf("update token failed: %v", err)
-	}
-	pool := account.NewPool(store)
-
-	var loginCount int32
-	resolver := NewResolver(store, pool, func(_ context.Context, _ config.Account) (string, error) {
-		n := atomic.AddInt32(&loginCount, 1)
-		return "fresh-token-" + string(rune('0'+n)), nil
-	})
-
-	req, _ := http.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	req.Header.Set("x-api-key", "managed-key")
-
-	a1, err := resolver.Determine(req)
-	if err != nil {
-		t.Fatalf("determine failed: %v", err)
-	}
-	if a1.DeepSeekToken != "seed-token" {
-		t.Fatalf("expected initial token without forced refresh, got %q", a1.DeepSeekToken)
-	}
-	resolver.Release(a1)
-	if got := atomic.LoadInt32(&loginCount); got != 0 {
-		t.Fatalf("expected no login before refresh interval, got %d", got)
-	}
-
-	resolver.mu.Lock()
-	resolver.tokenRefreshedAt["acc@example.com"] = time.Now().Add(-7 * time.Hour)
-	resolver.mu.Unlock()
-
-	a2, err := resolver.Determine(req)
-	if err != nil {
-		t.Fatalf("determine after interval failed: %v", err)
-	}
-	defer resolver.Release(a2)
-	if a2.DeepSeekToken != "fresh-token-1" {
-		t.Fatalf("expected refreshed token after interval, got %q", a2.DeepSeekToken)
-	}
-	if got := atomic.LoadInt32(&loginCount); got != 1 {
-		t.Fatalf("expected exactly one forced refresh login, got %d", got)
-	}
-}
-
-func TestDetermineManagedAccountUsesUpdatedRefreshInterval(t *testing.T) {
-	t.Setenv("DS2API_CONFIG_JSON", `{
-		"keys":["managed-key"],
-		"accounts":[{"email":"acc@example.com","password":"pwd","token":"seed-token"}],
-		"runtime":{"token_refresh_interval_hours":6}
-	}`)
-	store := config.LoadStore()
-	if err := store.UpdateAccountToken("acc@example.com", "seed-token"); err != nil {
-		t.Fatalf("update token failed: %v", err)
-	}
-	pool := account.NewPool(store)
-
-	var loginCount int32
-	resolver := NewResolver(store, pool, func(_ context.Context, _ config.Account) (string, error) {
-		n := atomic.AddInt32(&loginCount, 1)
-		return "fresh-token-" + string(rune('0'+n)), nil
-	})
-
-	req, _ := http.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	req.Header.Set("x-api-key", "managed-key")
-
-	a1, err := resolver.Determine(req)
-	if err != nil {
-		t.Fatalf("determine failed: %v", err)
-	}
-	if a1.DeepSeekToken != "seed-token" {
-		t.Fatalf("expected initial token without forced refresh, got %q", a1.DeepSeekToken)
-	}
-	resolver.Release(a1)
-	if got := atomic.LoadInt32(&loginCount); got != 0 {
-		t.Fatalf("expected no login before runtime update, got %d", got)
-	}
-
-	if err := store.Update(func(c *config.Config) error {
-		c.Runtime.TokenRefreshIntervalHours = 1
-		return nil
-	}); err != nil {
-		t.Fatalf("update runtime failed: %v", err)
-	}
-
-	resolver.mu.Lock()
-	resolver.tokenRefreshedAt["acc@example.com"] = time.Now().Add(-2 * time.Hour)
-	resolver.mu.Unlock()
-
-	a2, err := resolver.Determine(req)
-	if err != nil {
-		t.Fatalf("determine after runtime update failed: %v", err)
-	}
-	defer resolver.Release(a2)
-	if a2.DeepSeekToken != "fresh-token-1" {
-		t.Fatalf("expected refreshed token after runtime update, got %q", a2.DeepSeekToken)
-	}
-	if got := atomic.LoadInt32(&loginCount); got != 1 {
-		t.Fatalf("expected exactly one login after runtime update, got %d", got)
-	}
-}
-
-func TestDetermineManagedAccountRetriesOtherAccountOnLoginFailure(t *testing.T) {
+func TestDetermineManagedAccountRetriesOtherAccountOnMissingToken(t *testing.T) {
+	isolateTestConfigPath(t)
 	t.Setenv("DS2API_CONFIG_JSON", `{
 		"keys":["managed-key"],
 		"accounts":[
-			{"email":"bad@example.com","password":"pwd"},
-			{"email":"good@example.com","password":"pwd","token":"good-token"}
+			{"email":"bad@example.com"},
+			{"email":"good@example.com","token":"good-token"}
 		]
 	}`)
 	store := config.LoadStore()
 	pool := account.NewPool(store)
-	resolver := NewResolver(store, pool, func(_ context.Context, acc config.Account) (string, error) {
-		if acc.Email == "bad@example.com" {
-			return "", errors.New("stale account")
-		}
-		return "fresh-good-token", nil
-	})
+	resolver := NewResolver(store, pool)
 
 	req, _ := http.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	req.Header.Set("x-api-key", "managed-key")
@@ -328,33 +223,27 @@ func TestDetermineManagedAccountRetriesOtherAccountOnLoginFailure(t *testing.T) 
 		t.Fatalf("determine failed: %v", err)
 	}
 	defer resolver.Release(a)
+	// 账号池轮转顺序不确定，但结果必须落在有 token 的账号上。
 	if a.AccountID != "good@example.com" {
 		t.Fatalf("expected fallback to good account, got %q", a.AccountID)
 	}
-	if a.DeepSeekToken == "" {
-		t.Fatal("expected non-empty token from fallback account")
-	}
-	if !a.TriedAccounts["bad@example.com"] {
-		t.Fatalf("expected bad account to be tracked as tried")
+	if a.DeepSeekToken != "good-token" {
+		t.Fatalf("expected good token, got %q", a.DeepSeekToken)
 	}
 }
 
-func TestDetermineTargetAccountDoesNotFallbackOnLoginFailure(t *testing.T) {
+func TestDetermineTargetAccountDoesNotFallbackOnMissingToken(t *testing.T) {
+	isolateTestConfigPath(t)
 	t.Setenv("DS2API_CONFIG_JSON", `{
 		"keys":["managed-key"],
 		"accounts":[
-			{"email":"bad@example.com","password":"pwd"},
-			{"email":"good@example.com","password":"pwd","token":"good-token"}
+			{"email":"bad@example.com"},
+			{"email":"good@example.com","token":"good-token"}
 		]
 	}`)
 	store := config.LoadStore()
 	pool := account.NewPool(store)
-	resolver := NewResolver(store, pool, func(_ context.Context, acc config.Account) (string, error) {
-		if acc.Email == "bad@example.com" {
-			return "", errors.New("stale account")
-		}
-		return "fresh-good-token", nil
-	})
+	resolver := NewResolver(store, pool)
 
 	req, _ := http.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	req.Header.Set("x-api-key", "managed-key")
@@ -362,24 +251,22 @@ func TestDetermineTargetAccountDoesNotFallbackOnLoginFailure(t *testing.T) {
 
 	_, err := resolver.Determine(req)
 	if err == nil {
-		t.Fatal("expected determine to fail for broken target account")
+		t.Fatal("expected determine to fail for token-less target account")
 	}
 }
 
 func TestDetermineManagedAccountReturnsLastEnsureErrorWhenAllFail(t *testing.T) {
+	isolateTestConfigPath(t)
 	t.Setenv("DS2API_CONFIG_JSON", `{
 		"keys":["managed-key"],
 		"accounts":[
-			{"email":"bad1@example.com","password":"pwd"},
-			{"email":"bad2@example.com","password":"pwd"}
+			{"email":"bad1@example.com"},
+			{"email":"bad2@example.com"}
 		]
 	}`)
 	store := config.LoadStore()
 	pool := account.NewPool(store)
-	ensureErr := errors.New("all credentials stale")
-	resolver := NewResolver(store, pool, func(_ context.Context, _ config.Account) (string, error) {
-		return "", ensureErr
-	})
+	resolver := NewResolver(store, pool)
 
 	req, _ := http.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	req.Header.Set("x-api-key", "managed-key")
@@ -388,10 +275,7 @@ func TestDetermineManagedAccountReturnsLastEnsureErrorWhenAllFail(t *testing.T) 
 	if err == nil {
 		t.Fatal("expected determine to fail")
 	}
-	if !errors.Is(err, ensureErr) {
-		t.Fatalf("expected ensure error, got %v", err)
-	}
-	if errors.Is(err, ErrNoAccount) {
-		t.Fatalf("expected auth-style ensure error, got ErrNoAccount")
+	if !errors.Is(err, ErrNoToken) {
+		t.Fatalf("expected ErrNoToken, got %v", err)
 	}
 }

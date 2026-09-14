@@ -46,7 +46,7 @@ func TestProxyDialAddressKeepsHostnameForSocks5h(t *testing.T) {
 }
 
 func TestApplyProxyConnectivityHeadersUsesBaseHeaders(t *testing.T) {
-	req, err := http.NewRequest(http.MethodGet, "https://chat.deepseek.com/", nil)
+	req, err := http.NewRequest(http.MethodGet, "https://sdai.suda.edu.cn/", nil)
 	if err != nil {
 		t.Fatalf("http.NewRequest returned error: %v", err)
 	}

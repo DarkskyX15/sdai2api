@@ -18,15 +18,13 @@ import (
 )
 
 type requestClients struct {
-	regular   trans.Doer
-	stream    trans.Doer
-	fallback  *http.Client
-	fallbackS *http.Client
+	regular trans.Doer
+	stream  trans.Doer
 }
 
 type hostLookupFunc func(ctx context.Context, network, host string) ([]string, error)
 
-var proxyConnectivityTestURL = "https://chat.deepseek.com/"
+var proxyConnectivityTestURL = "https://sdai.suda.edu.cn/"
 
 var defaultHostLookup hostLookupFunc = func(ctx context.Context, _ string, host string) ([]string, error) {
 	return net.DefaultResolver.LookupHost(ctx, host)
@@ -94,10 +92,8 @@ func proxyDialContext(proxyCfg config.Proxy) (trans.DialContextFunc, error) {
 
 func (c *Client) defaultRequestClients() requestClients {
 	return requestClients{
-		regular:   c.regular,
-		stream:    c.stream,
-		fallback:  c.fallback,
-		fallbackS: c.fallbackS,
+		regular: c.regular,
+		stream:  c.stream,
 	}
 }
 
@@ -154,10 +150,8 @@ func (c *Client) requestClientsForAccount(acc config.Account) requestClients {
 	}
 
 	bundle := requestClients{
-		regular:   trans.NewWithDialContext(60*time.Second, dialContext),
-		stream:    trans.NewWithDialContext(0, dialContext),
-		fallback:  trans.NewFallbackClient(60*time.Second, dialContext),
-		fallbackS: trans.NewFallbackClient(0, dialContext),
+		regular: trans.NewWithDialContext(60*time.Second, dialContext),
+		stream:  trans.NewWithDialContext(0, dialContext),
 	}
 
 	c.proxyClientsMu.Lock()

@@ -2,23 +2,19 @@ package client
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 )
 
-func TestPostJSONWithStatusUsesProvidedFallbackClient(t *testing.T) {
-	var fallbackCalled bool
+func TestPostJSONWithStatusParsesBody(t *testing.T) {
 	client := &Client{}
-	primary := failingDoer{err: errors.New("primary failed")}
-	fallbackDoer := doerFunc(func(req *http.Request) (*http.Response, error) {
-		fallbackCalled = true
+	primary := doerFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+			Body:       io.NopCloser(strings.NewReader(`{"code":200,"message":"success"}`)),
 			Request:    req,
 		}, nil
 	})
@@ -26,7 +22,6 @@ func TestPostJSONWithStatusUsesProvidedFallbackClient(t *testing.T) {
 	resp, status, err := client.postJSONWithStatus(
 		context.Background(),
 		primary,
-		fallbackDoer,
 		"https://example.com/api",
 		map[string]string{"x-test": "1"},
 		map[string]any{"foo": "bar"},
@@ -37,11 +32,32 @@ func TestPostJSONWithStatusUsesProvidedFallbackClient(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("status=%d want=%d", status, http.StatusOK)
 	}
-	if !fallbackCalled {
-		t.Fatal("expected provided fallback doer to be called")
-	}
-	if ok, _ := resp["ok"].(bool); !ok {
+	if code, _ := resp["code"].(float64); int(code) != 200 {
 		t.Fatalf("unexpected response body: %#v", resp)
+	}
+}
+
+func TestDeleteJSONWithStatusSendsDeleteMethod(t *testing.T) {
+	client := &Client{}
+	var gotMethod string
+	primary := doerFunc(func(req *http.Request) (*http.Response, error) {
+		gotMethod = req.Method
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"code":200}`)),
+			Request:    req,
+		}, nil
+	})
+
+	if _, _, err := client.deleteJSONWithStatus(
+		context.Background(), primary, "https://example.com/del",
+		map[string]string{}, map[string]any{"uuid": "x"},
+	); err != nil {
+		t.Fatalf("deleteJSONWithStatus error: %v", err)
+	}
+	if gotMethod != http.MethodDelete {
+		t.Fatalf("expected DELETE method, got %q", gotMethod)
 	}
 }
 

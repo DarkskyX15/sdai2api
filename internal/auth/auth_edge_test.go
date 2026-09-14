@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"testing"
 
@@ -86,79 +85,6 @@ func TestFromContextMissing(t *testing.T) {
 	}
 }
 
-// ─── RefreshToken edge cases ─────────────────────────────────────────
-
-func TestRefreshTokenNotConfigToken(t *testing.T) {
-	r := newTestResolver(t)
-	a := &RequestAuth{UseConfigToken: false, resolver: r}
-	if r.RefreshToken(context.Background(), a) {
-		t.Fatal("expected false for non-config token")
-	}
-}
-
-func TestRefreshTokenEmptyAccountID(t *testing.T) {
-	r := newTestResolver(t)
-	a := &RequestAuth{UseConfigToken: true, AccountID: "", resolver: r}
-	if r.RefreshToken(context.Background(), a) {
-		t.Fatal("expected false for empty account ID")
-	}
-}
-
-func TestRefreshTokenSuccess(t *testing.T) {
-	r := newTestResolver(t)
-	// First acquire an account
-	req, _ := http.NewRequest("POST", "/", nil)
-	req.Header.Set("Authorization", "Bearer managed-key")
-	a, err := r.Determine(req)
-	if err != nil {
-		t.Fatalf("determine failed: %v", err)
-	}
-	defer r.Release(a)
-
-	if !r.RefreshToken(context.Background(), a) {
-		t.Fatal("expected refresh to succeed")
-	}
-	if a.DeepSeekToken != "fresh-token" {
-		t.Fatalf("expected fresh-token after refresh, got %q", a.DeepSeekToken)
-	}
-}
-
-// ─── MarkTokenInvalid edge cases ─────────────────────────────────────
-
-func TestMarkTokenInvalidNotConfigToken(t *testing.T) {
-	r := newTestResolver(t)
-	a := &RequestAuth{UseConfigToken: false, DeepSeekToken: "direct", resolver: r}
-	r.MarkTokenInvalid(a)
-	// Should not panic, token should be unchanged for non-config
-	_ = a.DeepSeekToken // Actual behavior may clear it; this test only asserts no panic.
-}
-
-func TestMarkTokenInvalidEmptyAccountID(t *testing.T) {
-	r := newTestResolver(t)
-	a := &RequestAuth{UseConfigToken: true, AccountID: "", DeepSeekToken: "tok", resolver: r}
-	r.MarkTokenInvalid(a)
-	// Should not panic
-}
-
-func TestMarkTokenInvalidClearsToken(t *testing.T) {
-	r := newTestResolver(t)
-	req, _ := http.NewRequest("POST", "/", nil)
-	req.Header.Set("Authorization", "Bearer managed-key")
-	a, err := r.Determine(req)
-	if err != nil {
-		t.Fatalf("determine failed: %v", err)
-	}
-	defer r.Release(a)
-
-	r.MarkTokenInvalid(a)
-	if a.DeepSeekToken != "" {
-		t.Fatalf("expected empty token after invalidation, got %q", a.DeepSeekToken)
-	}
-	if a.Account.Token != "" {
-		t.Fatalf("expected empty account token after invalidation, got %q", a.Account.Token)
-	}
-}
-
 // ─── SwitchAccount edge cases ────────────────────────────────────────
 
 func TestSwitchAccountNotConfigToken(t *testing.T) {
@@ -170,6 +96,7 @@ func TestSwitchAccountNotConfigToken(t *testing.T) {
 }
 
 func TestSwitchAccountNilTriedAccounts(t *testing.T) {
+	isolateTestConfigPath(t)
 	t.Setenv("DS2API_CONFIG_JSON", `{
 		"keys":["managed-key"],
 		"accounts":[
@@ -179,9 +106,7 @@ func TestSwitchAccountNilTriedAccounts(t *testing.T) {
 	}`)
 	store := config.LoadStore()
 	pool := account.NewPool(store)
-	r := NewResolver(store, pool, func(_ context.Context, _ config.Account) (string, error) {
-		return "new-token", nil
-	})
+	r := NewResolver(store, pool)
 
 	// First acquire
 	req, _ := http.NewRequest("POST", "/", nil)
@@ -202,23 +127,19 @@ func TestSwitchAccountNilTriedAccounts(t *testing.T) {
 	r.Release(a)
 }
 
-func TestSwitchAccountSkipsLoginFailureAndContinues(t *testing.T) {
+func TestSwitchAccountSkipsTokenlessAccountAndContinues(t *testing.T) {
+	isolateTestConfigPath(t)
 	t.Setenv("DS2API_CONFIG_JSON", `{
 		"keys":["managed-key"],
 		"accounts":[
-			{"email":"acc1@test.com","password":"pwd","token":"t1"},
-			{"email":"acc2@test.com","password":"pwd"},
-			{"email":"acc3@test.com","password":"pwd","token":"t3"}
+			{"email":"acc1@test.com","token":"t1"},
+			{"email":"acc2@test.com"},
+			{"email":"acc3@test.com","token":"t3"}
 		]
 	}`)
 	store := config.LoadStore()
 	pool := account.NewPool(store)
-	r := NewResolver(store, pool, func(_ context.Context, acc config.Account) (string, error) {
-		if acc.Email == "acc2@test.com" {
-			return "", errors.New("login failed")
-		}
-		return "new-token", nil
-	})
+	r := NewResolver(store, pool)
 
 	req, _ := http.NewRequest("POST", "/", nil)
 	req.Header.Set("Authorization", "Bearer managed-key")
@@ -227,21 +148,20 @@ func TestSwitchAccountSkipsLoginFailureAndContinues(t *testing.T) {
 		t.Fatalf("determine failed: %v", err)
 	}
 	defer r.Release(a)
-	if a.AccountID != "acc1@test.com" {
-		t.Fatalf("expected first account, got %q", a.AccountID)
+	if a.DeepSeekToken == "" {
+		t.Fatalf("expected initial account with token, got %q", a.AccountID)
 	}
 	if !r.SwitchAccount(context.Background(), a) {
-		t.Fatal("expected switch to succeed after skipping failed account")
+		t.Fatal("expected switch to succeed after skipping token-less account")
 	}
-	if a.AccountID != "acc3@test.com" {
-		t.Fatalf("expected fallback to third account, got %q", a.AccountID)
-	}
-	if !a.TriedAccounts["acc2@test.com"] {
-		t.Fatalf("expected failed account to be marked as tried")
+	// 账号池轮转顺序不确定，但切号结果必须落在有 token 的账号上。
+	if a.DeepSeekToken == "" {
+		t.Fatalf("expected switched account to carry a token, got %q", a.AccountID)
 	}
 }
 
 func TestSwitchAccountRespectsPinnedTargetAccount(t *testing.T) {
+	isolateTestConfigPath(t)
 	t.Setenv("DS2API_CONFIG_JSON", `{
 		"keys":["managed-key"],
 		"accounts":[
@@ -251,9 +171,7 @@ func TestSwitchAccountRespectsPinnedTargetAccount(t *testing.T) {
 	}`)
 	store := config.LoadStore()
 	pool := account.NewPool(store)
-	r := NewResolver(store, pool, func(_ context.Context, _ config.Account) (string, error) {
-		return "new-token", nil
-	})
+	r := NewResolver(store, pool)
 
 	req, _ := http.NewRequest("POST", "/", nil)
 	req.Header.Set("Authorization", "Bearer managed-key")
@@ -313,8 +231,6 @@ func TestVerifyJWTInvalidSignature(t *testing.T) {
 }
 
 func TestVerifyJWTExpired(t *testing.T) {
-	// Create a token with 0 hours expiry - will use default, so we can't easily test
-	// Instead test with bad payload
 	_, err := VerifyJWT("eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjF9.invalid")
 	if err == nil {
 		t.Fatal("expected error for expired/invalid JWT")
@@ -375,30 +291,30 @@ func TestVerifyAdminRequestBasicAuth(t *testing.T) {
 	}
 }
 
-// ─── Determine with login failure ────────────────────────────────────
+// ─── Determine with token-less account ───────────────────────────────
 
-func TestDetermineWithLoginFailure(t *testing.T) {
+func TestDetermineWithTokenlessAccount(t *testing.T) {
+	isolateTestConfigPath(t)
 	t.Setenv("DS2API_CONFIG_JSON", `{
 		"keys":["managed-key"],
-		"accounts":[{"email":"acc@test.com","password":"pwd"}]
+		"accounts":[{"email":"acc@test.com"}]
 	}`)
 	store := config.LoadStore()
 	pool := account.NewPool(store)
-	r := NewResolver(store, pool, func(_ context.Context, _ config.Account) (string, error) {
-		return "", errors.New("login failed")
-	})
+	r := NewResolver(store, pool)
 
 	req, _ := http.NewRequest("POST", "/", nil)
 	req.Header.Set("Authorization", "Bearer managed-key")
 	_, err := r.Determine(req)
 	if err == nil {
-		t.Fatal("expected error when login fails")
+		t.Fatal("expected error when account has no token")
 	}
 }
 
 // ─── Determine with target account ───────────────────────────────────
 
 func TestDetermineWithTargetAccount(t *testing.T) {
+	isolateTestConfigPath(t)
 	t.Setenv("DS2API_CONFIG_JSON", `{
 		"keys":["managed-key"],
 		"accounts":[
@@ -408,9 +324,7 @@ func TestDetermineWithTargetAccount(t *testing.T) {
 	}`)
 	store := config.LoadStore()
 	pool := account.NewPool(store)
-	r := NewResolver(store, pool, func(_ context.Context, _ config.Account) (string, error) {
-		return "fresh-token", nil
-	})
+	r := NewResolver(store, pool)
 
 	req, _ := http.NewRequest("POST", "/", nil)
 	req.Header.Set("Authorization", "Bearer managed-key")
@@ -422,6 +336,9 @@ func TestDetermineWithTargetAccount(t *testing.T) {
 	defer r.Release(a)
 	if a.AccountID != "acc2@test.com" {
 		t.Fatalf("expected target account acc2, got %q", a.AccountID)
+	}
+	if a.DeepSeekToken != "t2" {
+		t.Fatalf("expected target account token t2, got %q", a.DeepSeekToken)
 	}
 }
 

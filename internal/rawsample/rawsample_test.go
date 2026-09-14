@@ -29,12 +29,12 @@ func TestPersistWritesSampleFilesAndMeta(t *testing.T) {
 			},
 		},
 		Capture: CaptureSummary{
-			Label:      "deepseek_completion",
-			URL:        "https://chat.deepseek.com/api/v0/chat/completion",
+			Label:      "sdai_chat_start",
+			URL:        "https://sdai.suda.edu.cn/backend/api/chat/start",
 			StatusCode: 200,
 		},
-		UpstreamBody: []byte("data: {\"v\":\"hello [reference:1]\"}\n\n" +
-			"data: {\"v\":\"FINISHED\",\"p\":\"response/status\"}\n\n"),
+		UpstreamBody: []byte("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\",\"type\":\"text\"}}]}\n\n" +
+			"data: DONE\n\n"),
 	})
 	if err != nil {
 		t.Fatalf("Persist failed: %v", err)
@@ -67,11 +67,12 @@ func TestPersistWritesSampleFilesAndMeta(t *testing.T) {
 	if meta.SampleID != saved.SampleID {
 		t.Fatalf("expected meta sample id %q, got %q", saved.SampleID, meta.SampleID)
 	}
-	if meta.Capture.ReferenceMarkerCount != 1 {
-		t.Fatalf("expected one reference marker, got %+v", meta.Capture)
+	// SDAI 流无 [reference:N] / FINISHED 标记，分析器计数应为 0（保留作历史样本诊断）。
+	if meta.Capture.ReferenceMarkerCount != 0 || meta.Capture.ContainsReferenceMarkers {
+		t.Fatalf("expected no reference markers in SDAI sample, got %+v", meta.Capture)
 	}
-	if meta.Capture.FinishedTokenCount != 1 {
-		t.Fatalf("expected one finished token, got %+v", meta.Capture)
+	if meta.Capture.FinishedTokenCount != 0 || meta.Capture.ContainsFinishedToken {
+		t.Fatalf("expected no finished token in SDAI sample, got %+v", meta.Capture)
 	}
 	if strings.Contains(string(metaBytes), "\"processed\"") {
 		t.Fatalf("meta should not include processed payload: %s", string(metaBytes))

@@ -1,8 +1,6 @@
 package client
 
 import (
-	"context"
-	"net/http"
 	"sync"
 	"time"
 
@@ -22,8 +20,6 @@ type Client struct {
 	capture    *devcapture.Store
 	regular    trans.Doer
 	stream     trans.Doer
-	fallback   *http.Client
-	fallbackS  *http.Client
 	maxRetries int
 
 	proxyClientsMu sync.RWMutex
@@ -37,14 +33,7 @@ func NewClient(store *config.Store, resolver *auth.Resolver) *Client {
 		capture:      devcapture.Global(),
 		regular:      trans.New(60 * time.Second),
 		stream:       trans.New(0),
-		fallback:     &http.Client{Timeout: 60 * time.Second},
-		fallbackS:    &http.Client{Timeout: 0},
 		maxRetries:   3,
 		proxyClients: map[string]requestClients{},
 	}
-}
-
-// PreloadPow 保留兼容接口，纯 Go 实现无需预加载。
-func (c *Client) PreloadPow(_ context.Context) error {
-	return nil
 }

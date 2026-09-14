@@ -1,56 +1,35 @@
 package protocol
 
 import (
-	"encoding/json"
+	"strings"
 	"testing"
 )
 
-func TestSharedConstantsLoaded(t *testing.T) {
-	cfg := sharedConstants{}
-	if err := json.Unmarshal(sharedConstantsJSON, &cfg); err != nil {
-		t.Fatalf("failed to parse shared constants: %v", err)
-	}
-	client := normalizeClientConstants(cfg.Client)
-	if ClientVersion != client.Version {
-		t.Fatalf("unexpected client version=%q", ClientVersion)
-	}
-	wantUserAgent := client.Name + "/" + client.Version + " Android/" + client.AndroidAPILevel
-	if BaseHeaders["User-Agent"] != wantUserAgent {
-		t.Fatalf("unexpected user agent=%q", BaseHeaders["User-Agent"])
-	}
-	if BaseHeaders["x-client-platform"] != "android" {
-		t.Fatalf("unexpected base header x-client-platform=%q", BaseHeaders["x-client-platform"])
-	}
-	if BaseHeaders["x-client-version"] != ClientVersion {
-		t.Fatalf("unexpected base header x-client-version=%q", BaseHeaders["x-client-version"])
-	}
+func TestSDAIBaseHeaders(t *testing.T) {
 	if BaseHeaders["Content-Type"] != "application/json" {
-		t.Fatalf("unexpected base header Content-Type=%q", BaseHeaders["Content-Type"])
+		t.Fatalf("unexpected Content-Type header: %q", BaseHeaders["Content-Type"])
 	}
-	if len(SkipContainsPatterns) == 0 {
-		t.Fatal("expected skip contains patterns to be loaded")
+	if BaseHeaders["Referer"] != SDAIChatStartReferer {
+		t.Fatalf("unexpected Referer header: %q", BaseHeaders["Referer"])
 	}
-	if _, ok := SkipExactPathSet["response/search_status"]; !ok {
-		t.Fatal("expected response/search_status in exact skip path set")
+	if !strings.Contains(BaseHeaders["User-Agent"], "Mozilla/5.0") {
+		t.Fatalf("unexpected User-Agent header: %q", BaseHeaders["User-Agent"])
 	}
 }
 
-func TestClientHeadersDerivedFromSharedVersion(t *testing.T) {
-	client := normalizeClientConstants(clientConstants{
-		Name:            "DeepSeek",
-		Platform:        "android",
-		Version:         "9.8.7",
-		AndroidAPILevel: "35",
-		Locale:          "zh_CN",
-	})
-	headers := buildBaseHeaders(client, map[string]string{
-		"User-Agent":       "stale",
-		"x-client-version": "stale",
-	})
-	if headers["User-Agent"] != "DeepSeek/9.8.7 Android/35" {
-		t.Fatalf("unexpected derived user agent=%q", headers["User-Agent"])
+func TestSDAIEndpoints(t *testing.T) {
+	cases := map[string]string{
+		SDAIChatStartURL:    "/chat/start",
+		SDAIMsgTitleDelURL:  "/msg_title/del",
+		SDAIMsgTitleListURL: "/msg_title/list",
+		SDAIModelListURL:    "/model/list",
 	}
-	if headers["x-client-version"] != "9.8.7" {
-		t.Fatalf("unexpected derived client version=%q", headers["x-client-version"])
+	for url, suffix := range cases {
+		if !strings.HasSuffix(url, suffix) {
+			t.Fatalf("unexpected endpoint %q, want suffix %q", url, suffix)
+		}
+		if !strings.HasPrefix(url, SDAIBaseURL) {
+			t.Fatalf("endpoint %q must live under base url %q", url, SDAIBaseURL)
+		}
 	}
 }

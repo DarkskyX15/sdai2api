@@ -1,161 +1,51 @@
 package protocol
 
-import (
-	_ "embed"
-	"encoding/json"
-	"fmt"
-)
+// SDAI (sdai.suda.edu.cn) 上游站点端点与请求头常量。
+// 协议逆向结论见 .local/findings.md：裸 Bearer 鉴权、无 PoW、无客户端指纹要求。
 
 const (
-	DeepSeekHost                 = "chat.deepseek.com"
-	DeepSeekLoginURL             = "https://chat.deepseek.com/api/v0/users/login"
-	DeepSeekCreateSessionURL     = "https://chat.deepseek.com/api/v0/chat_session/create"
-	DeepSeekCreatePowURL         = "https://chat.deepseek.com/api/v0/chat/create_pow_challenge"
-	DeepSeekCompletionURL        = "https://chat.deepseek.com/api/v0/chat/completion"
-	DeepSeekContinueURL          = "https://chat.deepseek.com/api/v0/chat/continue"
-	DeepSeekUploadFileURL        = "https://chat.deepseek.com/api/v0/file/upload_file"
-	DeepSeekFetchFilesURL        = "https://chat.deepseek.com/api/v0/file/fetch_files"
-	DeepSeekFetchSessionURL      = "https://chat.deepseek.com/api/v0/chat_session/fetch_page"
-	DeepSeekDeleteSessionURL     = "https://chat.deepseek.com/api/v0/chat_session/delete"
-	DeepSeekDeleteAllSessionsURL = "https://chat.deepseek.com/api/v0/chat_session/delete_all"
-	DeepSeekCompletionTargetPath = "/api/v0/chat/completion"
-	DeepSeekUploadTargetPath     = "/api/v0/file/upload_file"
+	SDAIHost = "sdai.suda.edu.cn"
+
+	SDAIBaseURL = "https://sdai.suda.edu.cn/backend/api"
+
+	// SDAIChatStartURL 发起对话（POST，返回 text/event-stream；失败时降级为
+	// application/json 业务错误体 {"code","message"}，HTTP 状态恒 200）。
+	SDAIChatStartURL = SDAIBaseURL + "/chat/start"
+	// SDAIMsgTitleListURL 会话列表（GET，分页 page/page_size，results[].message_id 即会话 uuid）。
+	SDAIMsgTitleListURL = SDAIBaseURL + "/msg_title/list"
+	// SDAIMsgTitleDelURL 删除会话（DELETE，JSON body {"uuid": ...}）。
+	SDAIMsgTitleDelURL = SDAIBaseURL + "/msg_title/del"
+	// SDAIModelListURL 模型列表（GET，公开端点，无需鉴权）。
+	SDAIModelListURL = SDAIBaseURL + "/model/list"
+	// SDAIUserInfoURL 当前用户信息（GET）。
+	SDAIUserInfoURL = SDAIBaseURL + "/user/info"
+	// SDAIMsgListURL 会话消息记录（GET ?uuid=...）。
+	SDAIMsgListURL = SDAIBaseURL + "/msg/list"
 )
 
-var defaultStaticBaseHeaders = map[string]string{
-	"Host":           "chat.deepseek.com",
-	"Accept":         "application/json",
+// SDAIContentMaxBytes 上游 content 列长度上限（MySQL TEXT ≈ 65535 bytes）。
+// 超限时上游返回 HTTP 200 + 正常 SSE，但 delta 内容为 MySQL 1406 错误文本，
+// 因此必须在发送前预校验。实测 ASCII 65500 bytes 可通过。
+const SDAIContentMaxBytes = 65000
+
+// SDAIContentTooLongMarker 上游 content 超限时 delta 文本的特征（MySQL 错误码）。
+const SDAIContentTooLongMarker = "1406"
+
+// SDAIChatStartReferer 伪装浏览器对话页来源。
+const SDAIChatStartReferer = "https://sdai.suda.edu.cn/chat"
+
+// BaseHeaders 所有上游请求的基础头。SDAI 无客户端指纹校验，
+// 只需常规浏览器形态的头即可。
+var BaseHeaders = map[string]string{
 	"Content-Type":   "application/json",
+	"Referer":        SDAIChatStartReferer,
+	"User-Agent":     DefaultUserAgent,
 	"accept-charset": "UTF-8",
 }
 
-var defaultSkipContainsPatterns = []string{
-	"quasi_status",
-	"elapsed_secs",
-	"token_usage",
-	"pending_fragment",
-	"conversation_mode",
-	"fragments/-1/status",
-	"fragments/-2/status",
-	"fragments/-3/status",
-}
-
-var defaultSkipExactPaths = []string{
-	"response/search_status",
-}
-
-var ClientVersion string
-var BaseHeaders = map[string]string{}
-var SkipContainsPatterns = cloneStringSlice(defaultSkipContainsPatterns)
-var SkipExactPathSet = toStringSet(defaultSkipExactPaths)
-
-type clientConstants struct {
-	Name            string `json:"name"`
-	Platform        string `json:"platform"`
-	Version         string `json:"version"`
-	AndroidAPILevel string `json:"android_api_level"`
-	Locale          string `json:"locale"`
-}
-
-type sharedConstants struct {
-	Client              clientConstants   `json:"client"`
-	BaseHeaders         map[string]string `json:"base_headers"`
-	SkipContainsPattern []string          `json:"skip_contains_patterns"`
-	SkipExactPaths      []string          `json:"skip_exact_paths"`
-}
-
-//go:embed constants_shared.json
-var sharedConstantsJSON []byte
-
-func init() {
-	cfg := sharedConstants{}
-	if err := json.Unmarshal(sharedConstantsJSON, &cfg); err != nil {
-		panic(fmt.Errorf("load DeepSeek shared constants: %w", err))
-	}
-	applySharedConstants(cfg)
-}
-
-func applySharedConstants(cfg sharedConstants) {
-	client := normalizeClientConstants(cfg.Client)
-	ClientVersion = client.Version
-	BaseHeaders = buildBaseHeaders(client, cfg.BaseHeaders)
-	SkipContainsPatterns = cloneStringSlice(defaultSkipContainsPatterns)
-	if len(cfg.SkipContainsPattern) > 0 {
-		SkipContainsPatterns = cloneStringSlice(cfg.SkipContainsPattern)
-	}
-	SkipExactPathSet = toStringSet(defaultSkipExactPaths)
-	if len(cfg.SkipExactPaths) > 0 {
-		SkipExactPathSet = toStringSet(cfg.SkipExactPaths)
-	}
-}
-
-func normalizeClientConstants(in clientConstants) clientConstants {
-	if in.Name == "" {
-		in.Name = "DeepSeek"
-	}
-	if in.Platform == "" {
-		in.Platform = "android"
-	}
-	if in.AndroidAPILevel == "" {
-		in.AndroidAPILevel = "35"
-	}
-	if in.Locale == "" {
-		in.Locale = "zh_CN"
-	}
-	return in
-}
-
-func buildBaseHeaders(client clientConstants, overrides map[string]string) map[string]string {
-	out := cloneStringMap(defaultStaticBaseHeaders)
-	for k, v := range overrides {
-		if k == "" || v == "" {
-			continue
-		}
-		out[k] = v
-	}
-	if client.Name != "" && client.Version != "" {
-		userAgent := client.Name + "/" + client.Version
-		if client.Platform == "android" && client.AndroidAPILevel != "" {
-			userAgent += " Android/" + client.AndroidAPILevel
-		}
-		out["User-Agent"] = userAgent
-	}
-	if client.Platform != "" {
-		out["x-client-platform"] = client.Platform
-	}
-	if client.Version != "" {
-		out["x-client-version"] = client.Version
-	}
-	if client.Locale != "" {
-		out["x-client-locale"] = client.Locale
-	}
-	return out
-}
-
-func cloneStringMap(in map[string]string) map[string]string {
-	out := make(map[string]string, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
-
-func cloneStringSlice(in []string) []string {
-	out := make([]string, len(in))
-	copy(out, in)
-	return out
-}
-
-func toStringSet(in []string) map[string]struct{} {
-	out := make(map[string]struct{}, len(in))
-	for _, v := range in {
-		if v == "" {
-			continue
-		}
-		out[v] = struct{}{}
-	}
-	return out
-}
+// DefaultUserAgent 浏览器形态 UA。
+const DefaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+	"(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 const (
 	KeepAliveTimeout  = 5
