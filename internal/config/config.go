@@ -98,6 +98,14 @@ func (c *Config) NormalizeCredentials() {
 	for i := range c.Accounts {
 		c.Accounts[i].Name = strings.TrimSpace(c.Accounts[i].Name)
 		c.Accounts[i].Remark = strings.TrimSpace(c.Accounts[i].Remark)
+		if c.Accounts[i].Email != "" || c.Accounts[i].Mobile != "" || c.Accounts[i].Password != "" {
+			Logger.Warn("[config] account uses legacy DeepSeek login fields (email/mobile/password); " +
+				"SDAI upstream requires a Bearer token instead - set accounts[].token")
+		}
+		if c.Accounts[i].Token == "" {
+			Logger.Warn("[config] account has no token configured; it cannot serve requests",
+				"name", c.Accounts[i].Name)
+		}
 	}
 
 	c.Vercel = NormalizeVercelConfig(c.Vercel)

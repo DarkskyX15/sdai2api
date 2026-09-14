@@ -39,27 +39,26 @@ func TestGetModelConfigDeepSeekReasoner(t *testing.T) {
 	}
 }
 
-func TestGetModelConfigDeepSeekChatSearch(t *testing.T) {
-	thinking, search, ok := GetModelConfig("deepseek-v4-flash-search")
-	if !ok {
-		t.Fatal("expected ok for deepseek-v4-flash-search")
-	}
-	if !thinking || !search {
-		t.Fatalf("expected thinking=true search=true, got thinking=%v search=%v", thinking, search)
+func TestGetModelConfigSearchModelsUnsupported(t *testing.T) {
+	// SDAI 无联网搜索通道，-search 变体不再注册。
+	_, _, ok := GetModelConfig("deepseek-v4-flash-search")
+	if ok {
+		t.Fatal("expected deepseek-v4-flash-search to be unsupported under SDAI")
 	}
 }
 
-func TestGetModelConfigDeepSeekReasonerSearch(t *testing.T) {
-	thinking, search, ok := GetModelConfig("deepseek-v4-pro-search")
+func TestGetModelConfigNonThinkingCapableModel(t *testing.T) {
+	// doubao 系不支持思考开关。
+	thinking, _, ok := GetModelConfig("doubao-1-5-pro-32k-250115")
 	if !ok {
-		t.Fatal("expected ok for deepseek-v4-pro-search")
+		t.Fatal("expected ok for doubao model")
 	}
-	if !thinking || !search {
-		t.Fatalf("expected both true, got thinking=%v search=%v", thinking, search)
+	if thinking {
+		t.Fatal("expected thinking=false for doubao model")
 	}
 }
 
-func TestGetModelConfigDeepSeekExpertChat(t *testing.T) {
+func TestGetModelConfigExpertChat(t *testing.T) {
 	thinking, search, ok := GetModelConfig("deepseek-v4-pro")
 	if !ok {
 		t.Fatal("expected ok for deepseek-v4-pro")
@@ -69,34 +68,7 @@ func TestGetModelConfigDeepSeekExpertChat(t *testing.T) {
 	}
 }
 
-func TestGetModelConfigDeepSeekExpertReasonerSearch(t *testing.T) {
-	thinking, search, ok := GetModelConfig("deepseek-v4-pro-search")
-	if !ok {
-		t.Fatal("expected ok for deepseek-v4-pro-search")
-	}
-	if !thinking || !search {
-		t.Fatalf("expected both true, got thinking=%v search=%v", thinking, search)
-	}
-}
-
-func TestGetModelConfigDeepSeekVision(t *testing.T) {
-	thinking, search, ok := GetModelConfig("deepseek-v4-vision")
-	if !ok {
-		t.Fatal("expected ok for deepseek-v4-vision")
-	}
-	if !thinking || search {
-		t.Fatalf("expected thinking=true search=false, got thinking=%v search=%v", thinking, search)
-	}
-}
-
-func TestGetModelConfigDeepSeekVisionSearchUnsupported(t *testing.T) {
-	_, _, ok := GetModelConfig("deepseek-v4-vision-search")
-	if ok {
-		t.Fatal("expected deepseek-v4-vision-search to be unsupported")
-	}
-}
-
-func TestGetModelTypeDefaultExpertAndVision(t *testing.T) {
+func TestGetModelTypeDefaultForAllKnownModels(t *testing.T) {
 	defaultType, ok := GetModelType("deepseek-v4-flash")
 	if !ok || defaultType != "default" {
 		t.Fatalf("expected default model_type, got ok=%v model_type=%q", ok, defaultType)
@@ -105,13 +77,9 @@ func TestGetModelTypeDefaultExpertAndVision(t *testing.T) {
 	if !ok || defaultNoThinkingType != "default" {
 		t.Fatalf("expected default model_type for nothinking, got ok=%v model_type=%q", ok, defaultNoThinkingType)
 	}
-	expertType, ok := GetModelType("deepseek-v4-pro")
-	if !ok || expertType != "expert" {
-		t.Fatalf("expected expert model_type, got ok=%v model_type=%q", ok, expertType)
-	}
-	visionType, ok := GetModelType("deepseek-v4-vision")
-	if !ok || visionType != "vision" {
-		t.Fatalf("expected vision model_type, got ok=%v model_type=%q", ok, visionType)
+	proType, ok := GetModelType("deepseek-v4-pro")
+	if !ok || proType != "default" {
+		t.Fatalf("expected default model_type for pro under SDAI, got ok=%v model_type=%q", ok, proType)
 	}
 }
 
@@ -683,16 +651,15 @@ func TestOpenAIModelsResponse(t *testing.T) {
 		t.Fatal("expected non-empty models list")
 	}
 	expected := map[string]bool{
-		"deepseek-v4-flash":                   false,
-		"deepseek-v4-flash-nothinking":        false,
-		"deepseek-v4-pro":                     false,
-		"deepseek-v4-pro-nothinking":          false,
-		"deepseek-v4-flash-search":            false,
-		"deepseek-v4-flash-search-nothinking": false,
-		"deepseek-v4-pro-search":              false,
-		"deepseek-v4-pro-search-nothinking":   false,
-		"deepseek-v4-vision":                  false,
-		"deepseek-v4-vision-nothinking":       false,
+		"deepseek-v4-flash":            false,
+		"deepseek-v4-flash-nothinking": false,
+		"deepseek-v4-pro":              false,
+		"deepseek-v4-pro-nothinking":   false,
+		"deepseek-v3.2":                false,
+		"deepseek-v3.2-nothinking":     false,
+		"deepseek-v3-1-terminus":       false,
+		"deepseek-r1":                  false,
+		"doubao-1-5-pro-32k-250115":    false,
 	}
 	for _, model := range data {
 		if _, ok := expected[model.ID]; ok {

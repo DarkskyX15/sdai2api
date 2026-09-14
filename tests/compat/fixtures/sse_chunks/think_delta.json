@@ -1,0 +1,5 @@
+{
+  "chunk": {"choices": [{"index": 0, "delta": {"content": "好的", "type": "think"}}]},
+  "thinking_enabled": true,
+  "current_type": "thinking"
+}

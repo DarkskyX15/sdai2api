@@ -29,29 +29,60 @@ type ModelAliasReader interface {
 
 const noThinkingModelSuffix = "-nothinking"
 
-var deepSeekBaseModels = []ModelInfo{
-	{ID: "deepseek-v4-flash", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
-	{ID: "deepseek-v4-pro", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
-	{ID: "deepseek-v4-flash-search", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
-	{ID: "deepseek-v4-pro-search", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
-	{ID: "deepseek-v4-vision", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
+// sdaiBaseModels SDAI 平台 cate=text 的可对话模型（见 .local/findings.md 模型表）。
+// ID 为对外模型名；数字 ID 由 SDAINumericModelID 映射到上游 model_id 字段。
+var sdaiBaseModels = []ModelInfo{
+	{ID: "deepseek-v4-flash", Object: "model", Created: 1677610602, OwnedBy: "sdai", Permission: []any{}},
+	{ID: "deepseek-v4-pro", Object: "model", Created: 1677610602, OwnedBy: "sdai", Permission: []any{}},
+	{ID: "deepseek-v3.2", Object: "model", Created: 1677610602, OwnedBy: "sdai", Permission: []any{}},
+	{ID: "deepseek-v3-1-terminus", Object: "model", Created: 1677610602, OwnedBy: "sdai", Permission: []any{}},
+	{ID: "deepseek-r1", Object: "model", Created: 1677610602, OwnedBy: "sdai", Permission: []any{}},
+	{ID: "doubao-1-5-pro-32k-250115", Object: "model", Created: 1677610602, OwnedBy: "sdai", Permission: []any{}},
+}
+
+// sdaiNumericModelIDs 对外模型名 → SDAI 上游数字 model_id。
+var sdaiNumericModelIDs = map[string]int{
+	"deepseek-v4-flash":          10,
+	"deepseek-v4-pro":            8,
+	"deepseek-v3.2":              9,
+	"deepseek-v3-1-terminus":     7,
+	"deepseek-r1":                2,
+	"doubao-1-5-pro-32k-250115":  6,
+}
+
+// SDAINumericModelID 返回上游 model_id。-nothinking 后缀在映射前剥离。
+func SDAINumericModelID(model string) (int, bool) {
+	baseModel, _ := splitNoThinkingModel(model)
+	id, ok := sdaiNumericModelIDs[baseModel]
+	return id, ok
+}
+
+// SDAIModelSupportsThinking 非 DeepSeek 推理系模型（如 doubao）不支持思考开关。
+var sdaiThinkingCapable = map[string]bool{
+	"deepseek-v4-flash":         true,
+	"deepseek-v4-pro":           true,
+	"deepseek-v3.2":             true,
+	"deepseek-v3-1-terminus":    true,
+	"deepseek-r1":               true,
+	"doubao-1-5-pro-32k-250115": false,
 }
 
 var OllamaCapabilitiesModels = []OllamaCapabilitiesModelInfo{
 	{ID: "deepseek-v4-flash", Capabilities: []string{"tools", "thinking"}},
 	{ID: "deepseek-v4-pro", Capabilities: []string{"tools", "thinking"}},
-	{ID: "deepseek-v4-flash-search", Capabilities: []string{"tools", "thinking"}},
-	{ID: "deepseek-v4-pro-search", Capabilities: []string{"tools", "thinking"}},
-	{ID: "deepseek-v4-vision", Capabilities: []string{"tools", "thinking", "vision"}},
+	{ID: "deepseek-v3.2", Capabilities: []string{"tools", "thinking"}},
+	{ID: "deepseek-v3-1-terminus", Capabilities: []string{"tools", "thinking"}},
+	{ID: "deepseek-r1", Capabilities: []string{"thinking"}},
+	{ID: "doubao-1-5-pro-32k-250115", Capabilities: []string{"tools"}},
 	{ID: "deepseek-v4-flash-nothinking", Capabilities: []string{"tools"}},
 	{ID: "deepseek-v4-pro-nothinking", Capabilities: []string{"tools"}},
-	{ID: "deepseek-v4-flash-search-nothinking", Capabilities: []string{"tools"}},
-	{ID: "deepseek-v4-pro-search-nothinking", Capabilities: []string{"tools"}},
-	{ID: "deepseek-v4-vision-nothinking", Capabilities: []string{"tools", "vision"}},
+	{ID: "deepseek-v3.2-nothinking", Capabilities: []string{"tools"}},
+	{ID: "deepseek-v3-1-terminus-nothinking", Capabilities: []string{"tools"}},
 }
 
-var DeepSeekModels = appendNoThinkingVariants(deepSeekBaseModels)
-var OllamaModels = mapToOllamaModels(DeepSeekModels)
+var SDAIModels = appendNoThinkingVariants(sdaiBaseModels)
+var OllamaModels = mapToOllamaModels(SDAIModels)
+
 var claudeBaseModels = []ModelInfo{
 	// Current aliases
 	{ID: "claude-opus-4-6", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
@@ -63,10 +94,10 @@ var claudeBaseModels = []ModelInfo{
 	{ID: "claude-opus-4-1", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
 	{ID: "claude-opus-4-1-20250805", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
 	{ID: "claude-opus-4-0", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
-	{ID: "claude-opus-4-20250514", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
+	{ID: "claude-opus-20250514", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
 	{ID: "claude-sonnet-4-5-20250929", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
 	{ID: "claude-sonnet-4-0", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
-	{ID: "claude-sonnet-4-20250514", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
+	{ID: "claude-sonnet-20250514", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
 	{ID: "claude-haiku-4-5-20251001", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
 
 	// Claude 3.x (legacy/deprecated snapshots and aliases)
@@ -84,33 +115,27 @@ var claudeBaseModels = []ModelInfo{
 
 var ClaudeModels = appendNoThinkingVariants(claudeBaseModels)
 
+// GetModelConfig 返回模型默认 thinking 开关。
+// SDAI 无联网搜索通道，search 恒为 false。
 func GetModelConfig(model string) (thinking bool, search bool, ok bool) {
 	baseModel, noThinking := splitNoThinkingModel(model)
 	if baseModel == "" {
 		return false, false, false
 	}
-	switch baseModel {
-	case "deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v4-vision":
-		return !noThinking, false, true
-	case "deepseek-v4-flash-search", "deepseek-v4-pro-search":
-		return !noThinking, true, true
-	default:
+	if _, known := sdaiNumericModelIDs[baseModel]; !known {
 		return false, false, false
 	}
+	thinkingCapable := sdaiThinkingCapable[baseModel]
+	return thinkingCapable && !noThinking, false, true
 }
 
+// GetModelType SDAI 无 model_type 概念，所有已知模型返回 "default"。
 func GetModelType(model string) (modelType string, ok bool) {
 	baseModel, _ := splitNoThinkingModel(model)
-	switch baseModel {
-	case "deepseek-v4-flash", "deepseek-v4-flash-search":
+	if _, known := sdaiNumericModelIDs[baseModel]; known {
 		return "default", true
-	case "deepseek-v4-pro", "deepseek-v4-pro-search":
-		return "expert", true
-	case "deepseek-v4-vision":
-		return "vision", true
-	default:
-		return "", false
 	}
+	return "", false
 }
 
 func IsSupportedDeepSeekModel(model string) bool {
@@ -169,21 +194,21 @@ func DefaultModelAliases() map[string]string {
 		"o3":                    "deepseek-v4-pro",
 		"o3-mini":               "deepseek-v4-pro",
 		"o3-pro":                "deepseek-v4-pro",
-		"o3-deep-research":      "deepseek-v4-pro-search",
+		"o3-deep-research":      "deepseek-v4-pro",
 		"o4-mini":               "deepseek-v4-pro",
-		"o4-mini-deep-research": "deepseek-v4-pro-search",
+		"o4-mini-deep-research": "deepseek-v4-pro",
 
 		// Claude current and historical aliases
 		"claude-opus-4-6":            "deepseek-v4-pro",
 		"claude-opus-4-1":            "deepseek-v4-pro",
 		"claude-opus-4-1-20250805":   "deepseek-v4-pro",
 		"claude-opus-4-0":            "deepseek-v4-pro",
-		"claude-opus-4-20250514":     "deepseek-v4-pro",
+		"claude-opus-20250514":       "deepseek-v4-pro",
 		"claude-sonnet-4-6":          "deepseek-v4-flash",
 		"claude-sonnet-4-5":          "deepseek-v4-flash",
 		"claude-sonnet-4-5-20250929": "deepseek-v4-flash",
 		"claude-sonnet-4-0":          "deepseek-v4-flash",
-		"claude-sonnet-4-20250514":   "deepseek-v4-flash",
+		"claude-sonnet-20250514":     "deepseek-v4-flash",
 		"claude-haiku-4-5":           "deepseek-v4-flash",
 		"claude-haiku-4-5-20251001":  "deepseek-v4-flash",
 		"claude-3-7-sonnet":          "deepseek-v4-flash",
@@ -203,9 +228,8 @@ func DefaultModelAliases() map[string]string {
 		"claude-3-haiku":             "deepseek-v4-flash",
 		"claude-3-haiku-20240307":    "deepseek-v4-flash",
 
-		// Gemini current and historical text / multimodal models
+		// Gemini current and historical text models
 		"gemini-pro":            "deepseek-v4-pro",
-		"gemini-pro-vision":     "deepseek-v4-vision",
 		"gemini-pro-latest":     "deepseek-v4-pro",
 		"gemini-flash-latest":   "deepseek-v4-flash",
 		"gemini-1.5-pro":        "deepseek-v4-pro",
@@ -257,7 +281,7 @@ func lower(s string) string {
 }
 
 func OpenAIModelsResponse() map[string]any {
-	return map[string]any{"object": "list", "data": DeepSeekModels}
+	return map[string]any{"object": "list", "data": SDAIModels}
 }
 
 func OpenAIModelByID(store ModelAliasReader, id string) (ModelInfo, bool) {
@@ -265,7 +289,7 @@ func OpenAIModelByID(store ModelAliasReader, id string) (ModelInfo, bool) {
 	if !ok {
 		return ModelInfo{}, false
 	}
-	for _, model := range DeepSeekModels {
+	for _, model := range SDAIModels {
 		if model.ID == canonical {
 			return model, true
 		}

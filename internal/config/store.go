@@ -63,7 +63,8 @@ func loadConfig() (Config, bool, error) {
 			}
 			return cfg, true, err
 		}
-		cfg.ClearAccountTokens()
+		// SDAI 上游以配置中的 Bearer token 为唯一凭据（无自动登录），
+		// env 配置中的 accounts[].token 是用户显式提供的凭据，不再清除。
 		cfg.DropInvalidAccounts()
 		if IsVercel() || !envWritebackEnabled() {
 			return cfg, true, err
@@ -299,8 +300,9 @@ func (s *Store) SetVercelSync(hash string, ts int64) error {
 func (s *Store) ExportJSONAndBase64() (string, string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	// SDAI：token 是配置的一部分（用户显式提供的凭据），导出时保留，
+	// 否则备份/迁移后账号不可用。
 	exportCfg := s.cfg.Clone()
-	exportCfg.ClearAccountTokens()
 	b, err := json.Marshal(exportCfg)
 	if err != nil {
 		return "", "", err

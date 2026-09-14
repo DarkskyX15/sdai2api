@@ -65,25 +65,22 @@ func (r StandardRequest) CompletionPayload(sessionID string) map[string]any {
 	if modelID == "" {
 		modelID = r.RequestedModel
 	}
-	modelType := "default"
-	if resolvedType, ok := config.GetModelType(modelID); ok {
-		modelType = resolvedType
+	numericID, ok := config.SDAINumericModelID(modelID)
+	if !ok {
+		// 未知模型回退到默认 flash，保证请求可发出（正常路径下 ResolveModel 已校验）。
+		numericID = 10
 	}
-	refFileIDs := make([]any, 0, len(r.RefFileIDs))
-	for _, fileID := range r.RefFileIDs {
-		if fileID == "" {
-			continue
-		}
-		refFileIDs = append(refFileIDs, fileID)
+	think := 0
+	if r.Thinking {
+		think = 1
 	}
 	payload := map[string]any{
-		"chat_session_id":   sessionID,
-		"model_type":        modelType,
-		"parent_message_id": nil,
-		"prompt":            r.FinalPrompt,
-		"ref_file_ids":      refFileIDs,
-		"thinking_enabled":  r.Thinking,
-		"search_enabled":    r.Search,
+		"uuid":        sessionID,
+		"content":     r.FinalPrompt,
+		"from_uuid":   "",
+		"kb_tid_list": []any{},
+		"model_id":    numericID,
+		"think":       think,
 	}
 	for k, v := range r.PassThrough {
 		payload[k] = v

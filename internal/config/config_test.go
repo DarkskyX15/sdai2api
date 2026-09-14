@@ -8,18 +8,20 @@ import (
 	"testing"
 )
 
-func TestAccountIdentifierRequiresEmailOrMobile(t *testing.T) {
+func TestAccountIdentifierFallsBackToTokenDigest(t *testing.T) {
 	acc := Account{Token: "example-token-value"}
 	id := acc.Identifier()
-	if id != "" {
-		t.Fatalf("expected empty identifier when only token is present, got %q", id)
+	// SDAI：token 是唯一凭据，纯 token 账号以 token 摘要作为标识。
+	if id == "" || !strings.HasPrefix(id, "token:") {
+		t.Fatalf("expected token-digest identifier, got %q", id)
 	}
 }
 
-func TestLoadStoreClearsTokensFromConfigInput(t *testing.T) {
+func TestLoadStoreKeepsTokensFromEnvConfig(t *testing.T) {
+	t.Setenv("DS2API_CONFIG_PATH", t.TempDir()+"/config.json")
 	t.Setenv("DS2API_CONFIG_JSON", `{
 		"keys":["k1"],
-		"accounts":[{"email":"u@example.com","password":"p","token":"token-only-account"}]
+		"accounts":[{"email":"u@example.com","token":"token-only-account"}]
 	}`)
 
 	store := LoadStore()
@@ -27,8 +29,9 @@ func TestLoadStoreClearsTokensFromConfigInput(t *testing.T) {
 	if len(accounts) != 1 {
 		t.Fatalf("expected 1 account, got %d", len(accounts))
 	}
-	if accounts[0].Token != "" {
-		t.Fatalf("expected token to be cleared after loading, got %q", accounts[0].Token)
+	// SDAI：token 是唯一凭据，env 配置中的 token 必须保留。
+	if accounts[0].Token != "token-only-account" {
+		t.Fatalf("expected token to be preserved, got %q", accounts[0].Token)
 	}
 }
 
@@ -73,24 +76,25 @@ func TestLoadStorePreservesProxiesAndAccountProxyAssignment(t *testing.T) {
 	}
 }
 
-func TestLoadStoreDropsLegacyTokenOnlyAccounts(t *testing.T) {
+func TestLoadStoreKeepsTokenOnlyAccounts(t *testing.T) {
+	t.Setenv("DS2API_CONFIG_PATH", t.TempDir()+"/config.json")
 	t.Setenv("DS2API_CONFIG_JSON", `{
 		"accounts":[
 			{"token":"legacy-token-only"},
-			{"email":"u@example.com","password":"p","token":"runtime-token"}
+			{"email":"u@example.com","token":"runtime-token"}
 		]
 	}`)
 
 	store := LoadStore()
 	accounts := store.Accounts()
-	if len(accounts) != 1 {
-		t.Fatalf("expected token-only account to be dropped, got %d accounts", len(accounts))
+	// SDAI：token 即凭据，token-only 账号合法保留（以 token 摘要为标识）。
+	if len(accounts) != 2 {
+		t.Fatalf("expected both accounts to be kept, got %d accounts", len(accounts))
 	}
-	if accounts[0].Identifier() != "u@example.com" {
-		t.Fatalf("unexpected remaining account: %#v", accounts[0])
-	}
-	if accounts[0].Token != "" {
-		t.Fatalf("expected persisted token to be cleared, got %q", accounts[0].Token)
+	for _, acc := range accounts {
+		if acc.Token == "" {
+			t.Fatalf("expected all accounts to keep tokens, got %#v", acc)
+		}
 	}
 }
 

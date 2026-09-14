@@ -56,14 +56,13 @@ func TestResolveExpandedHistoricalAliases(t *testing.T) {
 	}{
 		{name: "openai old chatgpt", model: "chatgpt-4o", want: "deepseek-v4-flash"},
 		{name: "openai codex max", model: "gpt-5.1-codex-max", want: "deepseek-v4-pro"},
-		{name: "openai deep research", model: "o3-deep-research", want: "deepseek-v4-pro-search"},
+		{name: "openai deep research", model: "o3-deep-research", want: "deepseek-v4-pro"},
 		{name: "openai historical reasoning", model: "o1-preview", want: "deepseek-v4-pro"},
 		{name: "claude latest historical", model: "claude-3-5-sonnet-latest", want: "deepseek-v4-flash"},
 		{name: "claude historical opus", model: "claude-3-opus-20240229", want: "deepseek-v4-pro"},
 		{name: "claude historical haiku", model: "claude-3-haiku-20240307", want: "deepseek-v4-flash"},
 		{name: "gemini latest alias", model: "gemini-flash-latest", want: "deepseek-v4-flash"},
 		{name: "gemini historical pro", model: "gemini-1.5-pro", want: "deepseek-v4-pro"},
-		{name: "gemini vision legacy", model: "gemini-pro-vision", want: "deepseek-v4-vision"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -126,21 +125,36 @@ func TestResolveModelDirectDeepSeekExpert(t *testing.T) {
 	}
 }
 
-func TestResolveModelCustomAliasToExpert(t *testing.T) {
+func TestResolveModelCustomAliasToFlash(t *testing.T) {
 	got, ok := ResolveModel(mockModelAliasReader{
-		"my-expert-model": "deepseek-v4-pro-search",
-	}, "my-expert-model")
-	if !ok || got != "deepseek-v4-pro-search" {
-		t.Fatalf("expected alias -> deepseek-v4-pro-search, got ok=%v model=%q", ok, got)
+		"my-model": "deepseek-v3.2",
+	}, "my-model")
+	if !ok || got != "deepseek-v3.2" {
+		t.Fatalf("expected alias -> deepseek-v3.2, got ok=%v model=%q", ok, got)
 	}
 }
 
-func TestResolveModelCustomAliasToVision(t *testing.T) {
-	got, ok := ResolveModel(mockModelAliasReader{
-		"my-vision-model": "deepseek-v4-vision",
-	}, "my-vision-model")
-	if !ok || got != "deepseek-v4-vision" {
-		t.Fatalf("expected alias -> deepseek-v4-vision, got ok=%v model=%q", ok, got)
+func TestSDAINumericModelID(t *testing.T) {
+	cases := []struct {
+		model string
+		want  int
+	}{
+		{"deepseek-v4-flash", 10},
+		{"deepseek-v4-pro", 8},
+		{"deepseek-v3.2", 9},
+		{"deepseek-v3-1-terminus", 7},
+		{"deepseek-r1", 2},
+		{"doubao-1-5-pro-32k-250115", 6},
+		{"deepseek-v4-flash-nothinking", 10},
+	}
+	for _, tc := range cases {
+		got, ok := SDAINumericModelID(tc.model)
+		if !ok || got != tc.want {
+			t.Fatalf("SDAINumericModelID(%q) = (%d,%v), want (%d,true)", tc.model, got, ok, tc.want)
+		}
+	}
+	if _, ok := SDAINumericModelID("unknown"); ok {
+		t.Fatal("expected unknown model to have no numeric id")
 	}
 }
 
