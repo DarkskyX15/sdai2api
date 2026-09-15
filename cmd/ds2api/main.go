@@ -33,26 +33,41 @@ func main() {
 	if port == "" {
 		port = "5001"
 	}
+	// DS2API_BIND 控制监听地址：默认 0.0.0.0（Docker/局域网部署兼容）。
+	// 仅本机使用时建议显式设为 127.0.0.1，避免服务暴露到局域网。
+	bind := strings.TrimSpace(os.Getenv("DS2API_BIND"))
+	if bind == "" {
+		bind = "0.0.0.0"
+	}
+	if strings.EqualFold(bind, "localhost") {
+		bind = "127.0.0.1"
+	}
+	exposeAllInterfaces := bind == "0.0.0.0" || bind == "::"
 
 	srv := &http.Server{
-		Addr:              "0.0.0.0:" + port,
+		Addr:              bind + ":" + port,
 		Handler:           app.Router,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	localURL := fmt.Sprintf("http://127.0.0.1:%s", port)
-	lanIP := detectLANIPv4()
+	lanIP := ""
 	lanURL := ""
-	if lanIP != "" {
-		lanURL = fmt.Sprintf("http://%s:%s", lanIP, port)
+	if exposeAllInterfaces {
+		lanIP = detectLANIPv4()
+		if lanIP != "" {
+			lanURL = fmt.Sprintf("http://%s:%s", lanIP, port)
+		}
 	}
 
 	// Start server in a goroutine so we can listen for shutdown signals.
 	go func() {
 		if lanURL != "" {
 			config.Logger.Info("starting ds2api", "bind", srv.Addr, "port", port, "local_url", localURL, "lan_url", lanURL, "lan_ip", lanIP)
-		} else {
+		} else if exposeAllInterfaces {
 			config.Logger.Info("starting ds2api", "bind", srv.Addr, "port", port, "local_url", localURL)
 			config.Logger.Warn("lan ip not detected; check active network interfaces")
+		} else {
+			config.Logger.Info("starting ds2api", "bind", srv.Addr, "port", port, "local_url", localURL)
 		}
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			config.Logger.Error("server stopped unexpectedly", "error", err)

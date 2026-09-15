@@ -220,6 +220,7 @@ If you do not want to use the `zeabur.yaml` one-click template, deploy directly 
 | Variable | Recommended value | Description |
 | --- | --- | --- |
 | `PORT` | `5001` | Service listen port; keep it aligned with the exposed Zeabur HTTP port. |
+| `DS2API_BIND` | `0.0.0.0` (default) | Bind address. Set `127.0.0.1` for localhost-only use; container deployments must keep `0.0.0.0` or port mapping will not reach the service. |
 | `DS2API_ADMIN_KEY` | Strong random string | Required admin login key. |
 | `DS2API_CONFIG_PATH` | `/data/config.json` | Recommended persistent config path. |
 | `LOG_LEVEL` | `INFO` | Optional log level. |
