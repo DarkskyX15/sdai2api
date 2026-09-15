@@ -390,6 +390,7 @@
         "accountMaxQueue": "Account max queue size",
         "globalMaxInflight": "Global max inflight",
         "tokenRefreshIntervalHours": "Managed token refresh interval (hours)",
+        "runtimeSdaiNote": "The SDAI upstream uses a long-lived Bearer token with no auto login/refresh; re-paste the token in Account Management when it expires.",
         "behaviorTitle": "Behavior",
         "responsesTTL": "Responses store TTL (seconds)",
         "embeddingsProvider": "Embeddings provider",

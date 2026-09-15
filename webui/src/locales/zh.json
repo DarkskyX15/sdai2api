@@ -390,6 +390,7 @@
         "accountMaxQueue": "账号等待队列上限",
         "globalMaxInflight": "全局并发上限",
         "tokenRefreshIntervalHours": "托管账号 Token 刷新间隔（小时）",
+        "runtimeSdaiNote": "SDAI 上游使用长期 Bearer token，无自动登录/刷新；token 失效请在账号管理中重新粘贴。",
         "behaviorTitle": "行为设置",
         "responsesTTL": "Responses 缓存 TTL（秒）",
         "embeddingsProvider": "Embeddings Provider",
