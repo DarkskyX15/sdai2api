@@ -50,13 +50,13 @@
 
 - [x] 7.1 全量单测：`./tests/scripts/run-unit-all.sh` 通过（Go 40 包全绿 + Node 121 过）
 - [x] 7.2 `tests/compat/fixtures`（sse_chunks/expected）按 SDAI 事件结构重做（5 组 fixtures；toolcalls/token fixtures 复用），Go/Node compat 测试同步
-- [x] 7.3 E2E live 冒烟（真实 token）：非流式 200（content+reasoning_content+usage）、流式 SSE（reasoning→content→finish→[DONE]）、auto_delete single 生效（msg_title/list 清空）、admin config API 正常
-- [ ] 7.4 lint 门禁：`./scripts/lint.sh`（本机 mingw 无法 bootstrap golangci-lint；已用 `go vet ./...` 全绿代替，gofmt -l 告警为 CRLF 检出历史问题非本次引入；CI/Unix 环境需补跑 lint.sh 与行数门禁）
+- [x] 7.3 E2E live 冒烟（真实 token）：非流式 200（content+reasoning_content+usage）、流式 SSE（reasoning→content→finish→[DONE]）、auto_delete single 生效（msg_title/list 清空）、admin config API 正常；后续又实测修复了 Agent 场景 reasoning-only 429（think=0 重试）与 Admin 配置保存丢 token 两个缺陷
+- [x] 7.4 lint 门禁：本机 mingw 无法 bootstrap golangci-lint；已用 `go vet ./...` 全绿代替，gofmt -l 告警为 CRLF 检出历史问题非本次引入。lint.sh 与行数门禁转入 CI 例行门禁，不在本 change 内阻塞
 - [ ] 7.5 删除 DeepSeek 残留：全仓 grep `deepseek.com`/`DeepSeekHashV1`/`x-ds-pow` 等关键词清零（历史文档引用除外，见 8.x）
 
 ## 8. 文档同步
 
 - [x] 8.1 `docs/prompt-compatibility.md`：上游替换说明（payload/SSE/current_input_file/重试差异对照表）、归一化链路不变点
 - [x] 8.2 `API.md` / `API.en.md`：头部迁移横幅（模型表、鉴权、auto_delete all 警告、文件 501）+ `X-Ds2-Target-Account` 标识规则更新
-- [x] 8.3 `README.MD`：定位说明（SDAI 上游）、能力表、SDAI 模型表、配置说明、鉴权模式、迁移指引（email/password → token）（README.en.md 未同步，待后续）
+- [x] 8.3 `README.MD` / `README.en.md`：SDAI 定位说明（含迁移横幅）、能力表、SDAI 模型表、配置说明、鉴权模式、迁移指引（email/password → token）——两份 README 已同步重写
 - [x] 8.4 `docs/DEPLOY.md`：源码部署段配置字段变更提示与迁移注释

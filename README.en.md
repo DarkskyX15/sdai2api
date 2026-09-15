@@ -16,7 +16,9 @@
 
 Language: [中文](README.MD) | [English](README.en.md)
 
-DS2API converts DeepSeek Web chat capability into OpenAI-compatible, Claude-compatible, and Gemini-compatible APIs. The core backend is Go-based, with a small Node Runtime bridge used for Vercel streaming, and the React WebUI admin panel lives in `webui/` (build output auto-generated to `static/admin` during deployment).
+DS2API converts the **SDAI** web chat (sdai.suda.edu.cn, successor of the DeepSeek Web reverse-engineering) into OpenAI-compatible, Claude-compatible, and Gemini-compatible APIs. The core backend is Go-based, with a small Node Runtime bridge used for Vercel streaming, and the React WebUI admin panel lives in `webui/` (build output auto-generated to `static/admin` during deployment).
+
+> **Upstream migration notice**: this version switched from the DeepSeek Web channel to the SDAI web chat. Account credentials are now a directly-configured Bearer token (no auto login / PoW / file upload / auto-continue) and the model catalog is the SDAI numeric-ID set. Migrating from an older release only requires replacing `accounts[].email/password` with `accounts[].token`.
 
 Documentation entry: [Docs Index](docs/README.md) / [Architecture](docs/ARCHITECTURE.en.md) / [API Reference](API.en.md)
 
@@ -67,7 +69,7 @@ Documentation entry: [Docs Index](docs/README.md) / [Architecture](docs/ARCHITEC
 ```mermaid
 flowchart LR
     Client["🖥️ Clients / SDKs\n(OpenAI / Claude / Gemini)"]
-    Upstream["☁️ DeepSeek API"]
+    Upstream["☁️ SDAI Web Chat\n(sdai.suda.edu.cn)"]
 
     subgraph DS2API["DS2API 4.x (Modular HTTP Surface + PromptCompat Core)"]
         Router["chi Router + Middleware\n(RequestID / RealIP / Logger / Recoverer / CORS)"]
@@ -83,14 +85,13 @@ flowchart LR
 
         subgraph Runtime["Runtime + Core Capabilities"]
             Compat["PromptCompat\n(API -> web-chat plain text context)"]
-            Completion["Completion Runtime\n(session / PoW / completion)"]
+            Completion["Completion Runtime\n(one-shot session / completion / retries)"]
             Turn["AssistantTurn\n(output semantic normalization)"]
             Auth["Auth Resolver\n(API key / bearer / x-goog-api-key)"]
             Pool["Account Pool + Queue\n(in-flight slots + wait queue)"]
-            DSClient["DeepSeek Client\n(session / auth / completion / files)"]
-            Pow["PoW Solver\n(Pure Go)"]
+            DSClient["SDAI Client\n(Bearer auth / chat-start / session cleanup)"]
             Tool["Tool Sieve\n(Go/Node semantic parity)"]
-            History["Current Input File\n(DS2API_HISTORY.txt)"]
+            History["Chat History\n(local archives + responses store)"]
         end
     end
 
@@ -103,14 +104,13 @@ flowchart LR
     OA --> Compat
     CA & GA --> Compat
     Compat --> Completion
-    Completion -.full context.-> History
+    Completion -.archives.-> History
     Completion --> Turn
     Vercel -.Go prepare.-> Completion
     Vercel -.Node SSE.-> Tool
     Completion --> Auth
     Completion -.account rotation.-> Pool
     Completion -.tool-call parsing.-> Tool
-    Completion -.PoW solving.-> Pow
     Auth --> DSClient
     DSClient --> Upstream
     Upstream --> DSClient
@@ -133,9 +133,9 @@ For the full module-by-module architecture and directory responsibilities, see [
 | Gemini compatible | `POST /v1beta/models/{model}:generateContent`, `POST /v1beta/models/{model}:streamGenerateContent` (plus `/v1/models/{model}:*` paths) |
 | Ollama compatible | `GET /api/version`, `GET /api/tags`, `POST /api/show` |
 | Unified CORS compatibility | `/v1/*`, `/anthropic/*`, `/v1beta/models/*`, `/api/*`, and `/admin/*` share one CORS policy; on Vercel, the Node Runtime for `/v1/chat/completions` mirrors the same relaxed preflight behavior for third-party clients |
-| Multi-account rotation | Auto token refresh, email/mobile dual login |
+| Multi-account rotation | Accounts are configured directly with an SDAI Bearer token — no auto login/refresh (invalid tokens rotate to the next account) |
 | Concurrency control | Per-account in-flight limit + waiting queue, dynamic recommended concurrency |
-| DeepSeek PoW | Pure Go high-performance solver (DeepSeekHashV1), ms-level response |
+| Upstream integration | SDAI web-chat channel (sdai.suda.edu.cn): plain Bearer auth, no PoW, no TLS fingerprint spoofing |
 | Tool Calling | Anti-leak handling: non-code-block feature match, early `delta.tool_calls`, structured incremental output |
 | Admin API | Config management, runtime settings hot-reload, proxy management, account testing/batch test, session cleanup, import/export, Vercel sync, version check |
 | WebUI Admin Panel | SPA at `/admin` (bilingual Chinese/English, dark mode, with server-side conversation history) |
@@ -158,26 +158,33 @@ OpenAI `/v1/*` routes remain canonical, and DS2API also accepts root shortcuts s
 
 ### OpenAI Endpoint (`GET /v1/models`)
 
-| Family | Model ID | thinking | search |
+| Family | Model ID | Upstream `model_id` | thinking |
 | --- | --- | --- | --- |
-| default | `deepseek-v4-flash` | enabled by default, request-controlled | ❌ |
-| expert | `deepseek-v4-pro` | enabled by default, request-controlled | ❌ |
-| default | `deepseek-v4-flash-search` | enabled by default, request-controlled | ✅ |
-| expert | `deepseek-v4-pro-search` | enabled by default, request-controlled | ✅ |
-| vision | `deepseek-v4-vision` | enabled by default, request-controlled | ❌ |
+| default | `deepseek-v4-flash` | 10 | enabled by default, request-controlled |
+| default | `deepseek-v4-flash-nothinking` | 10 | permanently off (`think:0`) |
+| default | `deepseek-v4-pro` | 8 | enabled by default, request-controlled |
+| default | `deepseek-v4-pro-nothinking` | 8 | permanently off (`think:0`) |
+| default | `deepseek-v3.2` | 9 | request-controlled |
+| default | `deepseek-v3-1-terminus` | 7 | request-controlled |
+| default | `deepseek-r1` | 2 | always on (upstream-enforced) |
+| default | `doubao-1-5-pro-32k-250115` | 6 | not supported |
 
-Besides native IDs, DS2API also accepts common aliases as input (for example `gpt-4.1`, `gpt-5`, `gpt-5-codex`, `o3`, `claude-*`, `gemini-*`), but `/v1/models` returns normalized DeepSeek native model IDs. The complete alias behavior is documented in [API.en.md](API.en.md#model-alias-resolution) and `config.example.json`.
-Current upstream vision support exposes only the `vision` lane and does not provide a separate search-enabled vision variant.
+Besides native IDs, DS2API also accepts common aliases as input (for example `gpt-4.1`, `gpt-5`, `gpt-5-codex`, `o3`, `claude-*`, `gemini-*`), but `/v1/models` returns normalized SDAI model IDs. Appending a `-nothinking` suffix to an alias maps to the corresponding forced no-thinking model. The complete alias behavior is documented in [API.en.md](API.en.md#model-alias-resolution) and `config.example.json`.
+
+> The SDAI upstream has no web-search lane: the former `-search` model family is no longer registered. There is no file-upload endpoint either: `/v1/files` and inline file/image input return `501`. The `content` field is capped at roughly 65,535 bytes (~20k Chinese characters) — oversized requests are rejected by a client-side precheck.
 
 ### Claude Endpoint (`GET /anthropic/v1/models`)
 
 | Current common model | Default Mapping |
 | --- | --- |
 | `claude-sonnet-4-6` | `deepseek-v4-flash` |
+| `claude-sonnet-4-6-nothinking` | `deepseek-v4-flash-nothinking` |
 | `claude-haiku-4-5` (compatible with `claude-3-5-haiku-latest`) | `deepseek-v4-flash` |
+| `claude-haiku-4-5-nothinking` | `deepseek-v4-flash-nothinking` |
 | `claude-opus-4-6` | `deepseek-v4-pro` |
+| `claude-opus-4-6-nothinking` | `deepseek-v4-pro-nothinking` |
 
-Override mapping via the global `model_aliases` config.
+Override mapping via the global `model_aliases` config; a `-nothinking` suffix on the requested model name forces the no-thinking semantics on the final mapping.
 Besides the primary aliases above, `/anthropic/v1/models` also returns Claude 4.x snapshots plus historical 3.x IDs and common aliases for legacy client compatibility.
 
 #### Claude Code integration pitfalls (validated)
@@ -189,7 +196,7 @@ Besides the primary aliases above, `/anthropic/v1/models` also returns Claude 4.
 
 ### Gemini Endpoint
 
-The Gemini adapter maps model names to DeepSeek native models via `model_aliases` or exact built-in aliases (covering common `gemini-2.5-*`, `gemini-3*`, and `gemini-pro-vision` names), supporting both `generateContent` and `streamGenerateContent` call patterns with full Tool Calling support (`functionDeclarations` → `functionCall` output). If the Gemini model name has a `-nothinking` suffix, such as `gemini-2.5-pro-nothinking`, it maps to the corresponding forced no-thinking model.
+The Gemini adapter maps model names to SDAI native models via `model_aliases` or exact built-in aliases (covering common `gemini-2.5-*`, `gemini-3*`, and `gemini-pro-vision` names), supporting both `generateContent` and `streamGenerateContent` call patterns with full Tool Calling support (`functionDeclarations` → `functionCall` output). If the Gemini model name has a `-nothinking` suffix, such as `gemini-2.5-pro-nothinking`, it maps to the corresponding forced no-thinking model.
 
 ## Quick Start
 
@@ -284,7 +291,7 @@ Recommended: convert `config.json` to Base64 locally, then paste into `DS2API_CO
 base64 < config.json | tr -d '\n'
 ```
 
-> **Streaming note**: OpenAI Chat streaming on Vercel is routed to `api/chat-stream.js` (Node Runtime), but `vercel.json` rewrites only the canonical `/v1/chat/completions` path to Node; the root shortcut `/chat/completions` stays on the Go main path. Auth, account selection, and session/PoW preparation are still handled by the Go internal prepare endpoint; streaming output (including `tools`) is assembled on Node with Go-aligned anti-leak handling. Use `/v1/chat/completions` on Vercel when real-time streaming is required.
+> **Streaming note**: OpenAI Chat streaming on Vercel is routed to `api/chat-stream.js` (Node Runtime), but `vercel.json` rewrites only the canonical `/v1/chat/completions` path to Node; the root shortcut `/chat/completions` stays on the Go main path. Auth, account selection, and session preparation are still handled by the Go internal prepare endpoint; streaming output (including `tools`) is assembled on Node with Go-aligned anti-leak handling. Use `/v1/chat/completions` on Vercel when real-time streaming is required.
 
 For detailed deployment instructions, see the [Deployment Guide](docs/DEPLOY.en.md).
 
@@ -299,7 +306,7 @@ cd ds2api
 
 # 2. Configure
 cp config.example.json config.json
-# Edit config.json with your DeepSeek account info and API keys
+# Edit config.json with your SDAI Bearer token and API keys
 
 # 3. Start
 go run ./cmd/ds2api
@@ -318,12 +325,12 @@ The server actually binds to `0.0.0.0:5001`, so devices on the same LAN can usua
 Common fields:
 
 - `keys` / `api_keys`: client API keys; `api_keys` adds `name` and `remark` metadata while `keys` remains compatible.
-- `accounts`: managed DeepSeek accounts, supporting `email` or `mobile` login plus proxy/name/remark metadata.
+- `accounts`: SDAI accounts — `token` is the only required credential (sign in to sdai.suda.edu.cn in a browser, then copy it from any request's `authorization: Bearer <token>` header); `email` is an optional label only. The legacy `password`/`mobile` login fields no longer authenticate (a migration warning is logged when present). Proxy, name, and remark metadata still apply.
 - `model_aliases`: one shared alias map for OpenAI / Claude / Gemini model names.
-- `runtime`: account concurrency, queueing, and token refresh behavior, hot-reloadable via Admin Settings.
-- `auto_delete.mode`: remote session cleanup after each request, supporting `none` / `single` / `all`.
-- `current_input_file`: the global context split/upload mode; it is enabled by default and uploads the full context as a `DS2API_HISTORY.txt` context file once the character threshold is reached.
-- If you turn off `current_input_file`, requests pass through directly without uploading any split context file.
+- `runtime`: account concurrency and queueing, hot-reloadable via Admin Settings (`token_refresh_interval_hours` is deprecated: SDAI has no auto refresh).
+- `auto_delete.mode`: remote session cleanup after each request, supporting `none` / `single` (delete this request's session) / `all` (page through `GET msg_title/list` and delete each one — **this also wipes real web-side conversations**).
+- `current_input_file`: the SDAI upstream has no file-upload endpoint, so this field is kept but no longer changes behavior; long contexts go straight through `content` (capped at ~65,535 bytes).
+- `thinking_injection`: enabled by default; appends a thinking-booster prompt to the latest user message to stabilize deep reasoning and tool calls; leave `prompt` empty to use the built-in default.
 
 For the full environment variable list, see [docs/DEPLOY.en.md](docs/DEPLOY.en.md). For auth behavior, see [API.en.md](API.en.md#authentication).
 
@@ -334,9 +341,9 @@ For business endpoints (`/v1/*`, `/anthropic/*`, Gemini routes), DS2API supports
 | Mode | Description |
 | --- | --- |
 | **Managed account** | Use a key from `config.keys` via `Authorization: Bearer ...` or `x-api-key`; DS2API auto-selects an account |
-| **Direct token** | If the token is not in `config.keys`, DS2API treats it as a DeepSeek token directly |
+| **Direct token** | If the token is not in `config.keys`, DS2API treats it as an SDAI Bearer token directly (the fastest way to validate a fresh token) |
 
-Optional header `X-Ds2-Target-Account`: Pin a specific managed account (value is email or mobile).
+Optional header `X-Ds2-Target-Account`: Pin a specific managed account (value is the account's `email`/`name` identifier, or the synthetic `token:<hash>` identifier of a token-only account).
 When no target account is pinned, if a completion would end as `429 upstream_empty_output` after the same-account empty-output retry, managed-account mode switches to the next available account, creates a fresh session, and retries the original payload once.
 Gemini routes also accept `x-goog-api-key`, or `?key=` / `?api_key=` when no auth header is present.
 
@@ -351,7 +358,7 @@ Queue limit = DS2API_ACCOUNT_MAX_QUEUE (default = recommended concurrency)
 
 - When inflight slots are full, requests enter a waiting queue — **no immediate 429**
 - 429 is returned only when total load exceeds inflight + queue capacity; current responses do not include `Retry-After`
-- Completion empty-output 429s first get the same-account compensation retry; managed-account mode also tries one alternate-account fresh retry before returning the final 429
+- Completion empty-output 429s first get the same-account compensation retry (with thinking disabled); managed-account mode also tries one alternate-account fresh retry before returning the final 429
 - `GET /admin/queue/status` returns real-time concurrency state
 
 ## Tool Call Adaptation
@@ -360,16 +367,17 @@ When `tools` is present in the request, DS2API performs anti-leak handling:
 
 1. Toolcall feature matching is enabled only in **non-code-block context** (fenced examples are ignored)
 2. The parser treats the halfwidth-pipe DSML shell as the recommended executable tool-calling syntax: `<|DSML|tool_calls>` → `<|DSML|invoke name="...">` → `<|DSML|parameter name="...">`; it also accepts legacy canonical XML `<tool_calls>` → `<invoke name="...">` → `<parameter name="...">`, plus common DSML prefix/separator drift. DSML is a shell alias and internal parsing remains XML-based; legacy `<tools>` / `<tool_call>` / `<tool_name>` / `<param>`, `<function_call>`, `tool_use`, antml variants, and standalone JSON `tool_calls` payloads are treated as plain text, and complete but malformed wrappers are released as plain text too
-3. `responses` streaming strictly uses official item lifecycle events (`response.output_item.*`, `response.content_part.*`, `response.function_call_arguments.*`)
-4. `responses` supports and enforces `tool_choice` (`auto`/`none`/`required`/forced function); `required` violations return `422` for non-stream and `response.failed` for stream
-5. The output protocol follows the client request (OpenAI / Claude / Gemini native shapes); model-side prompting can prefer XML, and the compatibility layer handles the protocol-specific translation
+3. Tool calls emitted only inside the reasoning channel (a known SDAI thinking-model behavior) are promoted to `tool_calls` on finalize, whether thinking is enabled or not
+4. `responses` streaming strictly uses official item lifecycle events (`response.output_item.*`, `response.content_part.*`, `response.function_call_arguments.*`)
+5. `responses` supports and enforces `tool_choice` (`auto`/`none`/`required`/forced function); `required` violations return `422` for non-stream and `response.failed` for stream
+6. The output protocol follows the client request (OpenAI / Claude / Gemini native shapes); model-side prompting can prefer XML, and the compatibility layer handles the protocol-specific translation
 
 > Note: the current parser still prioritizes “parse successfully whenever possible”; hard allow-list rejection for undeclared tool names is not enabled yet.
 > Explicit empty strings or whitespace-only parameters are preserved by the parser; prompting tells the model not to emit blank parameters, and missing/empty argument rejection belongs in the tool executor or client schema validation.
 
 ## Local Dev Packet Capture
 
-This is for debugging issues such as Responses reasoning streaming and tool-call handoff. When enabled, DS2API stores the latest N DeepSeek conversation payload pairs (request body + upstream response body), defaulting to 20 entries with auto-eviction; each response body is capped at 5 MB by default.
+This is for debugging issues such as Responses reasoning streaming and tool-call handoff. When enabled, DS2API stores the latest N upstream conversation payload pairs (request body + upstream response body), defaulting to 20 entries with auto-eviction; each response body is capped at 5 MB by default.
 
 Enable example:
 
@@ -383,12 +391,12 @@ Inspect/clear (Admin JWT required):
 
 - `GET /admin/dev/captures`: list captured items (newest first)
 - `DELETE /admin/dev/captures`: clear captured items
-- `GET /admin/dev/raw-samples/query?q=keyword&limit=20`: search current in-memory captures by prompt keyword and group `completion + continue` by `chat_session_id`
+- `GET /admin/dev/raw-samples/query?q=keyword&limit=20`: search current in-memory captures by prompt keyword and group completion chains
 - `POST /admin/dev/raw-samples/save`: persist a selected capture chain as `tests/raw_stream_samples/<sample-id>/`
 
 Response fields include:
 
-- `request_body`: full payload sent to DeepSeek
+- `request_body`: full payload sent to the upstream
 - `response_body`: concatenated raw upstream stream body text
 - `response_truncated`: whether body-size truncation happened
 
