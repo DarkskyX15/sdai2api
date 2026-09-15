@@ -73,15 +73,6 @@ func StableProxyID(p Proxy) string {
 	return "proxy_" + hex.EncodeToString(sum[:6])
 }
 
-func (c *Config) ClearAccountTokens() {
-	if c == nil {
-		return
-	}
-	for i := range c.Accounts {
-		c.Accounts[i].Token = ""
-	}
-}
-
 func (c *Config) NormalizeCredentials() {
 	if c == nil {
 		return

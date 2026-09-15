@@ -27,8 +27,8 @@ func (s *Store) ConfigPath() string {
 }
 
 func writeConfigFile(path string, cfg Config) error {
+	// SDAI：token 是凭据本体，env writeback 落盘时同样保留。
 	persistCfg := cfg.Clone()
-	persistCfg.ClearAccountTokens()
 	b, err := json.MarshalIndent(persistCfg, "", "  ")
 	if err != nil {
 		return err
@@ -39,10 +39,11 @@ func writeConfigFile(path string, cfg Config) error {
 func writeConfigBytes(path string, b []byte) error {
 	dir := filepath.Dir(path)
 	if dir == "." || dir == "" {
-		return os.WriteFile(path, b, 0o644)
+		// config.json 含 SDAI token 凭据，权限收紧为仅属主可读写。
+		return os.WriteFile(path, b, 0o600)
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("mkdir config dir: %w", err)
 	}
-	return os.WriteFile(path, b, 0o644)
+	return os.WriteFile(path, b, 0o600)
 }

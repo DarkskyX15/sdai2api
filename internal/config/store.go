@@ -252,8 +252,9 @@ func (s *Store) Save() error {
 		Logger.Info("[save_config] source from env, skip write")
 		return nil
 	}
+	// SDAI：accounts[].token 是唯一凭据（无自动登录可重新获取），
+	// 必须原样持久化，否则 WebUI 添加的账号在重启后失效。
 	persistCfg := s.cfg.Clone()
-	persistCfg.ClearAccountTokens()
 	b, err := json.MarshalIndent(persistCfg, "", "  ")
 	if err != nil {
 		return err
@@ -270,8 +271,9 @@ func (s *Store) saveLocked() error {
 		Logger.Info("[save_config] source from env, skip write")
 		return nil
 	}
+	// SDAI：同 Save()，token 必须落盘（DeepSeek 时代靠密码换 token 的
+	// 清空策略不再适用）。
 	persistCfg := s.cfg.Clone()
-	persistCfg.ClearAccountTokens()
 	b, err := json.MarshalIndent(persistCfg, "", "  ")
 	if err != nil {
 		return err
